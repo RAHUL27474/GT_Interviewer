@@ -1,0 +1,20 @@
+[
+  {
+    "id": "digital-marketing-executive",
+    "title": "Digital Marketing Executive",
+    "location": "Delhi NCR",
+    "salaryMin": 3,
+    "salaryMax": 5,
+    "active": true,
+    "description": "We are looking for a Digital Marketing Executive to plan and run paid and organic campaigns that generate quality leads.\n\nResponsibilities:\n- Set up, run and optimise Google Ads (Search, Performance Max) and Meta Ads campaigns\n- Track leads, cost per lead and conversion rate; share weekly performance reports\n- Coordinate with the design team on ad creatives and landing pages\n- Manage Google Business Profile listings and respond to reviews\n- Run A/B tests on ad copy, audiences and landing pages\n\nRequirements:\n- 1-3 years of hands-on experience with Google Ads and Meta Ads Manager\n- Working knowledge of GA4 and Google Tag Manager (conversion tracking)\n- Comfortable with Excel / Google Sheets for reporting\n- Good written communication in English and Hindi"
+  },
+  {
+    "id": "full-stack-web-developer",
+    "title": "Full Stack Web Developer",
+    "location": "Delhi NCR",
+    "salaryMin": 6,
+    "salaryMax": 10,
+    "active": true,
+    "description": "We are hiring a Full Stack Web Developer to build and maintain our customer-facing websites and internal tools.\n\nResponsibilities:\n- Build responsive web pages and features using React / Next.js\n- Develop REST APIs in Node.js (Express) or PHP (Laravel)\n- Integrate third-party services: payment gateways, CRMs, WhatsApp Business API\n- Improve site speed, Core Web Vitals and technical SEO\n- Write clean, reviewed code and deploy using Git-based workflows\n\nRequirements:\n- 2-5 years of professional web development experience\n- Strong JavaScript/TypeScript, HTML, CSS\n- Experience with MySQL or PostgreSQL and schema design\n- Familiarity with cloud hosting (AWS / DigitalOcean), Linux and Nginx\n- Understanding of web security basics (auth, input validation, OWASP Top 10)"
+  }
+]

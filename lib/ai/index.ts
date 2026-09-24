@@ -1,60 +1,28 @@
-import Anthropic from "@anthropic-ai/sdk";
+// Interview prompts and schemas, shared by every AI provider.
+// The provider is chosen in lib/config.ts (AI_PROVIDER, or auto-detected from which API key is set).
 import mammoth from "mammoth";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { config } from "./config";
-import { mediaDir } from "./store";
-import type { Candidate, CandidateProfile, Evaluation, Job, Question } from "./types";
+import { config } from "../config";
+import { mediaDir } from "../store";
+import type { Candidate, CandidateProfile, Evaluation, Job, Question } from "../types";
+import { claudeStructured } from "./claude";
+import { geminiStructured } from "./gemini";
+import { mockEvaluation, mockQuestions } from "./mock";
+import type { Part, StructuredRequest } from "./types";
 
-const client = new Anthropic();
-
-type ContentBlock = Anthropic.Beta.BetaContentBlockParam;
-
-// One structured-output request. Returns the parsed JSON object matching `schema`.
-async function structuredCall<T>(opts: {
-  system: string;
-  content: ContentBlock[];
-  schema: Record<string, unknown>;
-  effort: "low" | "medium" | "high";
-}): Promise<T> {
-  const response = await client.beta.messages.create({
-    model: config.claudeModel,
-    max_tokens: 16000,
-    thinking: { type: "adaptive" },
-    output_config: { effort: opts.effort, format: { type: "json_schema", schema: opts.schema } },
-    // If a safety classifier declines, the API re-runs the request on a fallback model.
-    ...(config.claudeFallbacks && { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }),
-    system: opts.system,
-    messages: [{ role: "user", content: opts.content }],
-  });
-
-  if (response.stop_reason === "refusal") {
-    throw new Error(`Claude declined the request (${response.stop_details?.category ?? "unknown"})`);
-  }
-  if (response.stop_reason === "max_tokens") {
-    throw new Error("Claude response was cut off (max_tokens)");
-  }
-  const text = response.content
-    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-  return JSON.parse(text) as T;
+function structuredCall<T>(req: StructuredRequest): Promise<T> {
+  return config.aiProvider === "gemini" ? geminiStructured<T>(req) : claudeStructured<T>(req);
 }
 
-export async function resumeToBlock(buffer: Buffer, ext: string): Promise<ContentBlock> {
-  if (ext === ".pdf") {
-    return {
-      type: "document",
-      title: "Candidate resume",
-      source: { type: "base64", media_type: "application/pdf", data: buffer.toString("base64") },
-    };
-  }
+export async function resumeToPart(buffer: Buffer, ext: string): Promise<Part> {
+  if (ext === ".pdf") return { kind: "pdf", title: "Candidate resume", base64: buffer.toString("base64") };
   const text = ext === ".docx" ? (await mammoth.extractRawText({ buffer })).value : buffer.toString("utf8");
   if (!text.trim()) throw new Error("Resume file has no readable text");
-  return { type: "document", title: "Candidate resume", source: { type: "text", media_type: "text/plain", data: text } };
+  return { kind: "document", title: "Candidate resume", text };
 }
 
-const SYSTEM = `You are an experienced recruiter and hiring manager running a first-round written screening interview. \
+const SYSTEM = `You are an experienced recruiter and hiring manager running a first-round video screening interview. \
 You are fair, practical and job-focused. You never ask about or consider age, gender, religion, caste, marital status, \
 family plans, health, or other personal characteristics unrelated to the job.`;
 
@@ -91,10 +59,11 @@ const QUESTIONS_SCHEMA = {
 export async function generateQuestions(opts: {
   job: Pick<Job, "title" | "description">;
   candidate: CandidateProfile;
-  resumeBlock: ContentBlock;
+  resumePart: Part;
 }): Promise<Question[]> {
-  const { job, candidate, resumeBlock } = opts;
+  const { job, candidate, resumePart } = opts;
   const count = config.questionCount;
+  if (config.aiProvider === "mock") return mockQuestions(job, count);
   const jdCount = Math.max(1, Math.round(count * 0.7));
   const prompt = `<job_title>${job.title}</job_title>
 <job_description>
@@ -123,12 +92,12 @@ focused thing per question, no bullet lists, code snippets, or long numbers to r
 
   const result = await structuredCall<{ questions: Question[] }>({
     system: SYSTEM,
-    content: [resumeBlock, { type: "text", text: prompt }],
+    parts: [resumePart, { kind: "text", text: prompt }],
     schema: QUESTIONS_SCHEMA,
     effort: "medium",
   });
   const questions = result.questions.slice(0, count);
-  if (!questions.length) throw new Error("Claude returned no questions");
+  if (!questions.length) throw new Error("AI returned no questions");
   return questions;
 }
 
@@ -158,12 +127,13 @@ const EVALUATION_SCHEMA = {
 };
 
 export async function evaluateInterview(candidate: Candidate): Promise<Evaluation> {
+  if (config.aiProvider === "mock") return mockEvaluation(candidate);
   const job = candidate.jobSnapshot;
   const dir = mediaDir(candidate.id);
 
-  const content: ContentBlock[] = [
+  const parts: Part[] = [
     {
-      type: "text",
+      kind: "text",
       text: `<job_title>${job.title}</job_title>
 <job_description>
 ${job.description}
@@ -180,8 +150,8 @@ answer, followed by webcam snapshots taken while the candidate was answering.`,
 
   for (const [i, q] of candidate.questions.entries()) {
     const a = candidate.answers[i];
-    content.push({
-      type: "text",
+    parts.push({
+      kind: "text",
       text: `<question number="${i + 1}" focus="${q.focus}">
 <text>${q.question}</text>
 <strong_answer_covers>
@@ -194,18 +164,18 @@ ${a?.transcript?.trim() || "(no speech detected)"}
     });
     const snaps = a?.snapshots ?? [];
     if (snaps.length) {
-      content.push({ type: "text", text: `Webcam snapshots during answer ${i + 1}:` });
+      parts.push({ kind: "text", text: `Webcam snapshots during answer ${i + 1}:` });
       for (const name of snaps) {
         const data = await fs.readFile(path.join(dir, name)).catch(() => null);
         if (data) {
-          content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: data.toString("base64") } });
+          parts.push({ kind: "image", base64: data.toString("base64") });
         }
       }
     }
   }
 
-  content.push({
-    type: "text",
+  parts.push({
+    kind: "text",
     text: `Grade each answer from 0 to 10 against what this job needs:
 - 0: no answer, irrelevant, or "I don't know"
 - 1-3: vague or mostly incorrect
@@ -236,7 +206,7 @@ personal characteristic.
     evaluations: { question_number: number; score: number; feedback: string }[];
     proctoring_notes: string[];
   };
-  const result = await structuredCall<Raw>({ system: SYSTEM, content, schema: EVALUATION_SCHEMA, effort: "high" });
+  const result = await structuredCall<Raw>({ system: SYSTEM, parts, schema: EVALUATION_SCHEMA, effort: "high" });
 
   const byNumber = new Map(result.evaluations.map((e) => [e.question_number, e]));
   return {

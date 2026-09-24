@@ -3,7 +3,7 @@ import { LoginForm } from "@/components/admin/LoginForm";
 import { Alert, TopBar } from "@/components/ui";
 import { isAdmin } from "@/lib/auth";
 import { toSummary } from "@/lib/candidates";
-import { config } from "@/lib/config";
+import { AI_PROVIDER_LABEL, config } from "@/lib/config";
 import { JOINING_OPTIONS } from "@/lib/scoring";
 import { store } from "@/lib/store";
 
@@ -32,7 +32,15 @@ export default async function AdminPage() {
   return (
     <>
       <TopBar company={config.companyName} step="HR Dashboard" wide />
-      <main className="mx-auto max-w-7xl px-4 pt-6 pb-16">{body}</main>
+      <main className="mx-auto max-w-7xl space-y-4 px-4 pt-6 pb-16">
+        {signedIn && config.aiProvider !== "claude" && (
+          <Alert tone="info">
+            AI: <strong>{AI_PROVIDER_LABEL[config.aiProvider]}</strong>. Set ANTHROPIC_API_KEY in .env before launch to
+            use Claude.
+          </Alert>
+        )}
+        {body}
+      </main>
     </>
   );
 }

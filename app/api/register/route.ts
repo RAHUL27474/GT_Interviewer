@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { generateQuestions, resumeToBlock } from "@/lib/claude";
+import { generateQuestions, resumeToPart } from "@/lib/ai";
 import { config } from "@/lib/config";
 import { handler, HttpError } from "@/lib/http";
 import { JOINING_OPTIONS } from "@/lib/scoring";
@@ -60,7 +60,7 @@ export const POST = handler(async (request: Request) => {
   const buffer = Buffer.from(await file.arrayBuffer());
   let questions;
   try {
-    questions = await generateQuestions({ job, candidate: profile, resumeBlock: await resumeToBlock(buffer, ext) });
+    questions = await generateQuestions({ job, candidate: profile, resumePart: await resumeToPart(buffer, ext) });
   } catch (err) {
     console.error("Question generation failed:", err);
     throw new HttpError(502, "We couldn't prepare your interview right now. Please try again in a few minutes.");

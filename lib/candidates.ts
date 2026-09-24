@@ -1,5 +1,5 @@
 import { config } from "./config";
-import { evaluateInterview } from "./claude";
+import { evaluateInterview } from "./ai";
 import { computeScores } from "./scoring";
 import { store } from "./store";
 import type { Candidate, CandidateSummary, InterviewState } from "./types";

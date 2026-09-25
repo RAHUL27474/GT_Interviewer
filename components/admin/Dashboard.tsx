@@ -2,7 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import type { CandidateSummary, Job } from "@/lib/types";
+import type { CandidateSummary, Job, PublicStaffUser } from "@/lib/types";
+import { isManagerOrAbove, ROLE_LABEL } from "@/lib/roles";
+import { AccountDialog } from "./AccountDialog";
+import { TeamPanel } from "./TeamPanel";
 import { Button, cn, inputClass, Pill } from "../ui";
 import { CandidateDrawer } from "./CandidateDrawer";
 import { JobsPanel } from "./JobsPanel";
@@ -32,14 +35,19 @@ function sortValue(c: CandidateSummary, key: SortKey): string | number {
 }
 
 interface Props {
+  me: PublicStaffUser;
+  team: PublicStaffUser[];
+  deleteAfterDays: number;
   candidates: CandidateSummary[];
   jobs: Job[];
   joiningLabels: Record<string, string>;
 }
 
-export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
+export function Dashboard({ me, team, deleteAfterDays, candidates, jobs, joiningLabels }: Props) {
+  const isManager = isManagerOrAbove(me.role);
+  const [accountOpen, setAccountOpen] = useState(false);
   const router = useRouter();
-  const [tab, setTab] = useState<"candidates" | "jobs">("candidates");
+  const [tab, setTab] = useState<"candidates" | "jobs" | "team">("candidates");
   const [jobFilter, setJobFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -91,7 +99,7 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        {(["candidates", "jobs"] as const).map((t) => (
+        {(isManager ? (["candidates", "jobs", "team"] as const) : (["candidates", "jobs"] as const)).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -103,12 +111,29 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
             {t}
           </button>
         ))}
-        <Button variant="ghost" onClick={signOut} className="ml-auto">
+        <span className="ml-auto text-sm text-slate-500">
+          {me.name} ·{" "}
+          <span
+            className={cn(
+              "font-semibold",
+              me.role === "superadmin" ? "text-purple-700" : isManager ? "text-brand-700" : "text-slate-700",
+            )}
+          >
+            {ROLE_LABEL[me.role]}
+          </span>
+        </span>
+        <Button variant="ghost" onClick={() => setAccountOpen(true)}>
+          Change password
+        </Button>
+        <Button variant="ghost" onClick={signOut}>
           Sign out
         </Button>
       </div>
+      {accountOpen && <AccountDialog onClose={() => setAccountOpen(false)} />}
 
-      {tab === "jobs" ? (
+      {tab === "team" && isManager ? (
+        <TeamPanel me={me} team={team} deleteAfterDays={deleteAfterDays} />
+      ) : tab === "jobs" ? (
         <JobsPanel jobs={jobs} />
       ) : (
         <>
@@ -230,6 +255,7 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
           joiningLabels={joiningLabels}
           onClose={() => setOpenId(null)}
           onChanged={() => router.refresh()}
+          canDelete={isManager}
         />
       )}
     </div>

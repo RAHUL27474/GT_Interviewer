@@ -31,7 +31,26 @@ export function JobsPanel({ jobs }: { jobs: Job[] }) {
 }
 
 function JobCard({ job, onEdit }: { job: Job; onEdit: () => void }) {
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState("");
+
+  async function remove() {
+    if (
+      !confirm(
+        `Delete the job "${job.title}"?
+
+It will disappear from the application form and job list. Candidates who already applied keep their interviews and scores.
+
+Tip: to stop new applications but keep the job, edit it and untick "Open for applications" instead.`,
+      )
+    )
+      return;
+    const res = await fetch(`/api/admin/jobs/${encodeURIComponent(job.id)}`, { method: "DELETE" });
+    if (!res.ok) return setError((await res.json().catch(() => ({}))).error || "Could not delete the job.");
+    router.refresh();
+  }
+
 
   return (
     <Card>
@@ -41,6 +60,7 @@ function JobCard({ job, onEdit }: { job: Job; onEdit: () => void }) {
             {job.title} {job.active ? <Pill tone="good">Open</Pill> : <Pill tone="bad">Closed</Pill>}
           </h3>
           <p className="mt-0.5 text-sm text-slate-500">
+            {job.updatedBy && <span className="mr-1">Last edited by {job.updatedBy} ·</span>}
             {job.location || "No location"} · Budget:{" "}
             {job.salaryMax ? `₹${job.salaryMin ?? 0}–${job.salaryMax} LPA` : "not set"}
           </p>
@@ -59,8 +79,16 @@ function JobCard({ job, onEdit }: { job: Job; onEdit: () => void }) {
           <Button variant="secondary" onClick={onEdit}>
             Edit
           </Button>
+          <Button variant="ghost" onClick={remove} className="!border-red-200 !text-red-600 hover:!bg-red-50">
+            Delete
+          </Button>
         </div>
       </div>
+      {error && (
+        <div className="mt-3">
+          <Alert>{error}</Alert>
+        </div>
+      )}
       <div className="mt-3 max-h-48 overflow-auto rounded-lg bg-slate-50 p-3 text-sm whitespace-pre-wrap text-slate-700">
         {job.description}
       </div>

@@ -4,6 +4,11 @@ import type { IntegritySummary, ProctorEvent, ProctorEventType } from "./types";
 export const PROCTOR_EVENTS: Record<ProctorEventType, { label: string; weight: number; warning: string }> = {
   face_missing: { label: "Face not visible", weight: 2, warning: "We can't see your face. Please stay in front of the camera." },
   multiple_faces: { label: "More than one person", weight: 3, warning: "Another person is visible. The interview must be taken alone." },
+  different_person: {
+    label: "Different person on camera",
+    weight: 5,
+    warning: "The person on camera is not the candidate who started this interview.",
+  },
   looking_away: { label: "Looking away", weight: 1, warning: "Please look at the screen while answering." },
   phone_detected: { label: "Phone in view", weight: 3, warning: "A phone is visible. Please put it away." },
   left_window: { label: "Left the interview window", weight: 2, warning: "You left the interview window. This has been recorded." },

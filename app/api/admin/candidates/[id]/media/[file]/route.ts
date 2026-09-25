@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
-import { requireAdmin } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
 import { handler, HttpError } from "@/lib/http";
 import { mediaDir, store } from "@/lib/store";
 
@@ -10,7 +10,7 @@ const MIME: Record<string, string> = { ".webm": "video/webm", ".mp4": "video/mp4
 
 /** Streams an answer video or snapshot. Supports Range requests so the video player can seek. */
 export const GET = handler(async (request: Request, ctx: { params: Promise<{ id: string; file: string }> }) => {
-  await requireAdmin();
+  await requireStaff();
   const { id, file } = await ctx.params;
   const c = await store.getCandidate(id);
   // Only serve files this candidate's answers actually reference (also blocks path tricks).

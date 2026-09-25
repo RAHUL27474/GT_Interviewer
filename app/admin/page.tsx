@@ -1,29 +1,37 @@
 import { Dashboard } from "@/components/admin/Dashboard";
 import { LoginForm } from "@/components/admin/LoginForm";
 import { Alert, TopBar } from "@/components/ui";
-import { isAdmin } from "@/lib/auth";
+import { getCurrentUser, toPublic } from "@/lib/auth";
 import { toSummary } from "@/lib/candidates";
 import { AI_PROVIDER_LABEL, config } from "@/lib/config";
 import { JOINING_OPTIONS } from "@/lib/scoring";
+import { isManagerOrAbove, ROLE_LABEL } from "@/lib/roles";
 import { store } from "@/lib/store";
+import { visibleJobs, visibleTeam } from "@/lib/visibility";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: `${config.companyName} · HR Dashboard` };
 
 export default async function AdminPage() {
-  const signedIn = await isAdmin();
+  const user = await getCurrentUser();
 
   let body;
-  if (!config.adminPassword) {
-    body = <Alert>Set ADMIN_PASSWORD in your .env file and restart the server to enable the dashboard.</Alert>;
-  } else if (!signedIn) {
+  if (!user) {
     body = <LoginForm />;
   } else {
-    const [candidates, jobs] = await Promise.all([store.listCandidates(), store.listJobs()]);
+    const canSeeTeam = isManagerOrAbove(user.role);
+    const [candidates, jobs, users] = await Promise.all([
+      store.listCandidates(),
+      store.listJobs(),
+      canSeeTeam ? store.listUsers() : Promise.resolve([]),
+    ]);
     body = (
       <Dashboard
+        me={toPublic(user)}
         candidates={candidates.map(toSummary)}
-        jobs={jobs}
+        jobs={await visibleJobs(user, jobs)}
+        team={visibleTeam(user, users).map(toPublic)}
+        deleteAfterDays={config.accountDeleteAfterDays}
         joiningLabels={Object.fromEntries(JOINING_OPTIONS.map((o) => [o.value, o.label]))}
       />
     );
@@ -31,9 +39,9 @@ export default async function AdminPage() {
 
   return (
     <>
-      <TopBar company={config.companyName} step="HR Dashboard" wide />
+      <TopBar company={config.companyName} step={user ? `${ROLE_LABEL[user.role]} Dashboard` : "Staff Dashboard"} wide />
       <main className="mx-auto max-w-7xl space-y-4 px-4 pt-6 pb-16">
-        {signedIn && config.aiProvider !== "claude" && (
+        {user && config.aiProvider !== "claude" && (
           <Alert tone="info">
             AI: <strong>{AI_PROVIDER_LABEL[config.aiProvider]}</strong>. Set ANTHROPIC_API_KEY in .env before launch to
             use Claude.

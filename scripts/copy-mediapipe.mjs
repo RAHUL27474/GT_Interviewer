@@ -1,4 +1,4 @@
-// Prepares MediaPipe for the browser: copies the WebAssembly runtime (exact installed version) and
+// Prepares MediaPipe and face recognition for the browser: copies the WebAssembly runtime (exact installed version) and
 // downloads the two models into public/, so candidates load them from this server rather than Google's.
 import fs from "node:fs";
 import path from "node:path";
@@ -9,6 +9,19 @@ if (fs.existsSync(src)) {
   fs.mkdirSync(wasmDest, { recursive: true });
   for (const f of fs.readdirSync(src)) fs.copyFileSync(path.join(src, f), path.join(wasmDest, f));
   console.log(`MediaPipe wasm copied to ${wasmDest}`);
+}
+
+// Face recognition models (detects a different person taking the candidate's place), from @vladmandic/face-api.
+const faceApiSrc = path.join("node_modules", "@vladmandic", "face-api", "model");
+const faceApiDest = path.join("public", "faceapi", "models");
+if (fs.existsSync(faceApiSrc)) {
+  fs.mkdirSync(faceApiDest, { recursive: true });
+  for (const f of fs.readdirSync(faceApiSrc)) {
+    if (/^(tiny_face_detector_model|face_landmark_68_tiny_model|face_recognition_model)[-.]/.test(f)) {
+      fs.copyFileSync(path.join(faceApiSrc, f), path.join(faceApiDest, f));
+    }
+  }
+  console.log(`Face recognition models copied to ${faceApiDest}`);
 }
 
 const MODELS = {

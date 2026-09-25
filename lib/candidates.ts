@@ -1,13 +1,17 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { evaluateInterview, generateQuestions, resumeToPart } from "./ai";
+import { evaluateInterview, generateQuestions, resumeToPart, whisperTranscripts } from "./ai";
 import { config } from "./config";
 import { HttpError } from "./http";
+import { logger, since, who } from "./log";
 import { computeIntegrity } from "./proctoring";
 import { computeScores } from "./scoring";
 import { RESUME_DIR, store } from "./store";
 import type { Candidate, CandidateSummary, Evaluation, InterviewState } from "./types";
+
+const log = logger("interview");
+const elog = logger("grading");
 
 export function interviewState(c: Candidate): InterviewState {
   const answered = c.answers.length;
@@ -27,6 +31,8 @@ export function interviewState(c: Candidate): InterviewState {
     hrContact: config.hrContact,
     maxWarnings: config.maxWarnings,
     awayGraceSeconds: config.awayGraceSeconds,
+    maxLookAwayWarnings: config.maxLookAwayWarnings,
+    secondPersonGraceSeconds: config.secondPersonGraceSeconds,
   };
 }
 
@@ -65,7 +71,7 @@ export function assertActiveSession(c: Candidate, sessionId: unknown) {
  */
 export async function interruptInterview(id: string, reason: string): Promise<boolean> {
   let interrupted = false;
-  await store.updateCandidate(id, (c) => {
+  const updated = await store.updateCandidate(id, (c) => {
     if (c.status !== "in_progress") return;
     const now = new Date().toISOString();
     c.interruption = { at: now, reason, answeredCount: c.answers.length };
@@ -74,6 +80,9 @@ export async function interruptInterview(id: string, reason: string): Promise<bo
     delete c.sessionId;
     interrupted = true;
   });
+  if (interrupted && updated) {
+    log.warn(`${who(updated)} interrupted after ${updated.answers.length}/${updated.questions.length} answers: ${reason}`);
+  }
   return interrupted;
 }
 
@@ -92,9 +101,26 @@ const UNANSWERED_FEEDBACK = "Not answered: the interview was interrupted before 
 
 /** Grades a finished (or interrupted) interview and stores the result. Never throws. */
 export async function runEvaluation(id: string) {
+  const start = Date.now();
   try {
-    const c = await store.getCandidate(id);
+    let c = await store.getCandidate(id);
     if (!c) return;
+    elog.info(`${who(c)}: grading ${c.answers.length}/${c.questions.length} answers...`);
+
+    const whisper = await whisperTranscripts(c);
+    if (whisper.size) {
+      const updated = await store.updateCandidate(id, (cand) => {
+        for (const [i, text] of whisper) {
+          const a = cand.answers[i];
+          if (!a) continue;
+          a.browserTranscript ??= a.transcript;
+          a.transcript = text;
+          a.transcriptSource = "whisper";
+        }
+      });
+      if (!updated) return;
+      c = updated;
+    }
 
     let evaluation: Evaluation;
     if (c.answers.length === 0) {
@@ -128,8 +154,11 @@ export async function runEvaluation(id: string) {
       cand.evaluatedAt = new Date().toISOString();
       delete cand.evaluationError;
     });
+    const perQuestion = evaluation.evaluations.map((e) => e.score).join(", ");
+    elog.info(`${who(c)}: done in ${since(start)}. Total ${scores.total} (${scores.recommendation}); answers [${perQuestion}] /10`);
+    if (evaluation.proctoringNotes.length) elog.warn(`${who(c)} proctoring: ${evaluation.proctoringNotes.join("; ")}`);
   } catch (err) {
-    console.error(`Evaluation failed for ${id}:`, err);
+    elog.error(`Grading ${id.slice(0, 8)} failed after ${since(start)}:`, err);
     await store
       .updateCandidate(id, (cand) => {
         cand.status = "evaluation_failed";
@@ -149,7 +178,7 @@ export async function resumePendingEvaluations() {
  * HR-approved re-interview: archives the current attempt and issues fresh questions
  * (the candidate has already seen the old ones). The same interview link works again.
  */
-export async function resetForReinterview(id: string) {
+export async function resetForReinterview(id: string, by: string) {
   const c = await store.getCandidate(id);
   if (!c) throw new HttpError(404, "Candidate not found.");
   if (!["completed", "evaluation_failed"].includes(c.status)) {
@@ -167,6 +196,7 @@ export async function resetForReinterview(id: string) {
   await store.updateCandidate(id, (cand) => {
     (cand.attempts ??= []).push({
       archivedAt: new Date().toISOString(),
+      archivedBy: by,
       questions: cand.questions,
       answers: cand.answers,
       proctoring: cand.proctoring,

@@ -8,11 +8,70 @@ import { mediaDir } from "../store";
 import type { Candidate, CandidateProfile, Evaluation, Job, Question } from "../types";
 import { claudeStructured } from "./claude";
 import { geminiStructured } from "./gemini";
+import { hfStructured, hfTranscribe } from "./hf";
+import { logger, since, who } from "../log";
 import { mockEvaluation, mockQuestions } from "./mock";
 import type { Part, StructuredRequest } from "./types";
 
-function structuredCall<T>(req: StructuredRequest): Promise<T> {
-  return config.aiProvider === "gemini" ? geminiStructured<T>(req) : claudeStructured<T>(req);
+const log = logger("ai");
+
+/** The model the active provider uses, for logs and the startup banner. */
+export function activeModel() {
+  return { claude: config.claudeModel, gemini: config.geminiModel, hf: config.hfModel, mock: "none" }[config.aiProvider];
+}
+
+async function structuredCall<T>(label: string, req: StructuredRequest): Promise<T> {
+  const images = req.parts.filter((p) => p.kind === "image").length;
+  log.info(`${label}: calling ${config.aiProvider} (${activeModel()})${images ? `, ${images} image(s)` : ""}...`);
+  const start = Date.now();
+  try {
+    const result =
+      config.aiProvider === "gemini"
+        ? await geminiStructured<T>(req)
+        : config.aiProvider === "hf"
+          ? await hfStructured<T>(req)
+          : await claudeStructured<T>(req);
+    log.info(`${label}: done in ${since(start)}`);
+    return result;
+  } catch (err) {
+    log.error(`${label}: failed after ${since(start)}`, err);
+    throw err;
+  }
+}
+
+const VIDEO_MIME: Record<string, string> = { ".webm": "audio/webm", ".mp4": "audio/mp4" };
+
+/**
+ * With the hf provider, replaces each answer's browser transcript with a Whisper transcript of its video.
+ * Returns the new transcripts by answer index; answers that fail keep their browser transcript.
+ */
+export async function whisperTranscripts(candidate: Candidate): Promise<Map<number, string>> {
+  const result = new Map<number, string>();
+  if (config.aiProvider !== "hf" || !config.hfWhisper) return result;
+  const dir = mediaDir(candidate.id);
+  const wlog = logger("whisper");
+  for (const [i, a] of candidate.answers.entries()) {
+    if (a.transcriptSource === "whisper") continue;
+    if (!a.video) {
+      wlog.info(`${who(candidate)} answer ${i + 1}: no video, keeping browser transcript`);
+      continue;
+    }
+    const start = Date.now();
+    try {
+      const data = await fs.readFile(path.join(dir, a.video));
+      const text = await hfTranscribe(data, VIDEO_MIME[path.extname(a.video)] ?? "audio/webm");
+      const mb = (data.length / 1024 / 1024).toFixed(1);
+      if (text) {
+        result.set(i, text.slice(0, config.maxTranscriptChars));
+        wlog.info(`${who(candidate)} answer ${i + 1}: ${text.length} chars from ${mb} MB video in ${since(start)}`);
+      } else {
+        wlog.warn(`${who(candidate)} answer ${i + 1}: no speech found in ${mb} MB video, keeping browser transcript`);
+      }
+    } catch (err) {
+      wlog.warn(`${who(candidate)} answer ${i + 1}: failed after ${since(start)}, keeping browser transcript:`, err);
+    }
+  }
+  return result;
 }
 
 export async function resumeToPart(buffer: Buffer, ext: string): Promise<Part> {
@@ -63,7 +122,10 @@ export async function generateQuestions(opts: {
 }): Promise<Question[]> {
   const { job, candidate, resumePart } = opts;
   const count = config.questionCount;
-  if (config.aiProvider === "mock") return mockQuestions(job, count);
+  if (config.aiProvider === "mock") {
+    log.info(`Questions for ${candidate.fullName}: mock mode, using placeholder questions`);
+    return mockQuestions(job, count);
+  }
   const jdCount = Math.max(1, Math.round(count * 0.7));
   const prompt = `<job_title>${job.title}</job_title>
 <job_description>
@@ -90,7 +152,7 @@ focused thing per question, no bullet lists, code snippets, or long numbers to r
 - "focus": the skill or area the question tests, in a few words.
 - "expected_points": 3-5 points a strong answer would cover. These are for the grader only and are never shown to the candidate.`;
 
-  const result = await structuredCall<{ questions: Question[] }>({
+  const result = await structuredCall<{ questions: Question[] }>(`Questions for ${candidate.fullName}`, {
     system: SYSTEM,
     parts: [resumePart, { kind: "text", text: prompt }],
     schema: QUESTIONS_SCHEMA,
@@ -127,7 +189,10 @@ const EVALUATION_SCHEMA = {
 };
 
 export async function evaluateInterview(candidate: Candidate): Promise<Evaluation> {
-  if (config.aiProvider === "mock") return mockEvaluation(candidate);
+  if (config.aiProvider === "mock") {
+    log.info(`Grading ${who(candidate)}: mock mode, using placeholder scores`);
+    return mockEvaluation(candidate);
+  }
   const job = candidate.jobSnapshot;
   const dir = mediaDir(candidate.id);
 
@@ -183,7 +248,7 @@ ${!a ? "(not answered: the interview was interrupted)" : a.transcript.trim() || 
 - 7-8: solid and practical, covers most of the strong-answer points
 - 9-10: excellent, specific, shows real hands-on experience
 
-The transcripts come from browser speech recognition, so expect misheard words, missing punctuation and filler words. \
+The transcripts come from automatic speech recognition, so expect misheard words, missing punctuation and filler words. \
 Read for the intended meaning and do not penalise transcription errors, accent, grammar or fluency, unless the job \
 description asks for spoken communication skills. If a transcript is empty or garbled beyond understanding, score it \
 on what you can tell and say in the feedback that HR should watch the video.
@@ -206,7 +271,12 @@ personal characteristic.
     evaluations: { question_number: number; score: number; feedback: string }[];
     proctoring_notes: string[];
   };
-  const result = await structuredCall<Raw>({ system: SYSTEM, parts, schema: EVALUATION_SCHEMA, effort: "high" });
+  const result = await structuredCall<Raw>(`Grading ${who(candidate)}`, {
+    system: SYSTEM,
+    parts,
+    schema: EVALUATION_SCHEMA,
+    effort: "high",
+  });
 
   const byNumber = new Map(result.evaluations.map((e) => [e.question_number, e]));
   return {

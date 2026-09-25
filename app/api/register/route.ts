@@ -4,11 +4,14 @@ import path from "node:path";
 import { generateQuestions, resumeToPart } from "@/lib/ai";
 import { config } from "@/lib/config";
 import { handler, HttpError } from "@/lib/http";
+import { logger, who } from "@/lib/log";
 import { JOINING_OPTIONS } from "@/lib/scoring";
 import { RESUME_DIR, store } from "@/lib/store";
 import type { Candidate, CandidateProfile } from "@/lib/types";
 
 export const maxDuration = 300;
+
+const log = logger("register");
 
 function parseProfile(form: FormData): CandidateProfile {
   const str = (k: string) => {
@@ -42,7 +45,9 @@ function parseProfile(form: FormData): CandidateProfile {
 }
 
 export const POST = handler(async (request: Request) => {
-  const form = await request.formData();
+  const form = await request.formData().catch(() => {
+    throw new HttpError(400, "Upload was incomplete. Please try again.");
+  });
   const profile = parseProfile(form);
 
   const file = form.get("resume");
@@ -58,11 +63,12 @@ export const POST = handler(async (request: Request) => {
   if (duplicate) throw new HttpError(409, "You have already applied for this position with this email.");
 
   const buffer = Buffer.from(await file.arrayBuffer());
+  log.info(`${profile.fullName} applied for "${job.title}" (resume ${ext}, ${(file.size / 1024).toFixed(0)} KB)`);
   let questions;
   try {
     questions = await generateQuestions({ job, candidate: profile, resumePart: await resumeToPart(buffer, ext) });
   } catch (err) {
-    console.error("Question generation failed:", err);
+    log.error(`Could not prepare the interview for ${profile.fullName}:`, err);
     throw new HttpError(502, "We couldn't prepare your interview right now. Please try again in a few minutes.");
   }
 
@@ -83,5 +89,6 @@ export const POST = handler(async (request: Request) => {
     proctoring: { events: [] },
   };
   await store.addCandidate(candidate);
+  log.info(`${who(candidate)} registered with ${questions.length} questions, ready to start`);
   return Response.json({ id });
 });

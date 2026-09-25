@@ -5,16 +5,21 @@ import { after } from "next/server";
 import { assertActiveSession, interviewState, runEvaluation } from "@/lib/candidates";
 import { config } from "@/lib/config";
 import { handler, HttpError } from "@/lib/http";
+import { logger, who } from "@/lib/log";
 import { mediaDir, store } from "@/lib/store";
 
 export const maxDuration = 300;
+
+const log = logger("interview");
 
 const VIDEO_EXT: Record<string, string> = { "video/webm": ".webm", "video/mp4": ".mp4" };
 
 /** Accepts one answer: the recorded video, its speech-to-text transcript, and webcam snapshots. */
 export const POST = handler(async (request: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
-  const form = await request.formData();
+  const form = await request.formData().catch(() => {
+    throw new HttpError(400, "Upload was incomplete. Please try again.");
+  });
   const index = Number(form.get("index"));
   const sessionId = form.get("sessionId");
 
@@ -71,6 +76,12 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
       }
     });
     if (!updated) throw new HttpError(404, "Interview not found.");
+    const videoMb = video instanceof File ? (video.size / 1024 / 1024).toFixed(1) : "0";
+    log.info(
+      `${who(updated)} answered ${index + 1}/${updated.questions.length}: video ${videoMb} MB, ` +
+        `${snapshotNames.length} snapshot(s), transcript ${updated.answers[index].transcript.length} chars`,
+    );
+    if (finished) log.info(`${who(updated)} finished the interview; grading in the background`);
 
     // Grade after the response is sent, so the candidate isn't kept waiting.
     if (finished) after(() => runEvaluation(id));

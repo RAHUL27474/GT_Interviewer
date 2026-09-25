@@ -1,5 +1,6 @@
 import { interviewState, newSessionId } from "@/lib/candidates";
 import { handler, HttpError } from "@/lib/http";
+import { logger, who } from "@/lib/log";
 import { store } from "@/lib/store";
 
 /**
@@ -36,5 +37,8 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
     }
   });
   if (!updated) throw new HttpError(404, "Interview not found.");
+  logger("interview").info(
+    `${who(updated)} started the interview (${updated.questions.length} questions${secondScreen ? ", second monitor detected" : ""})`,
+  );
   return Response.json({ sessionId, state: interviewState(updated) });
 });

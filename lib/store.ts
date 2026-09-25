@@ -1,14 +1,16 @@
 // Tiny JSON-file store. Good for a few thousand candidates; swap for a real DB beyond that.
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { Candidate, Job } from "./types";
+import type { Candidate, Job, StaffUser } from "./types";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+/** Where candidates, jobs, resumes and videos live. On Railway, point this at the mounted volume. */
+const DATA_DIR = path.resolve(process.env.DATA_DIR || "data");
 export const RESUME_DIR = path.join(DATA_DIR, "resumes");
 /** Per-candidate folder of answer videos and webcam snapshots. */
 export const mediaDir = (candidateId: string) => path.join(DATA_DIR, "videos", candidateId);
 const CANDIDATES = "candidates.json";
 const JOBS = "jobs.json";
+const USERS = "users.json";
 
 async function read<T>(file: string, fallback: T): Promise<T> {
   try {
@@ -103,7 +105,45 @@ export const store = {
     });
   },
 
+  /** Deletes a candidate record plus their resume and all interview media. */
+  async deleteCandidate(id: string) {
+    const removed = await update<Record<string, Candidate>, Candidate | null>(CANDIDATES, {}, (all) => {
+      const c = all[id] ?? null;
+      delete all[id];
+      return c;
+    });
+    if (!removed) return false;
+    await fs.rm(path.join(RESUME_DIR, removed.resume.storedAs), { force: true });
+    await fs.rm(mediaDir(id), { recursive: true, force: true });
+    return true;
+  },
+
+  async listUsers(): Promise<StaffUser[]> {
+    return read<StaffUser[]>(USERS, []);
+  },
+  saveUser(user: StaffUser) {
+    return update<StaffUser[], StaffUser>(USERS, [], (users) => {
+      const i = users.findIndex((u) => u.id === user.id);
+      if (i === -1) users.push(user);
+      else users[i] = user;
+      return user;
+    });
+  },
+  /** Applies fn to a user under the store lock; fn may throw to abort. */
+  updateUsers<R>(fn: (users: StaffUser[]) => R | Promise<R>) {
+    return update<StaffUser[], R>(USERS, [], fn);
+  },
+
   listJobs: readJobs,
+  async deleteJob(id: string) {
+    await readJobs(); // make sure the seed exists first
+    return update<Job[], boolean>(JOBS, [], (jobs) => {
+      const i = jobs.findIndex((j) => j.id === id);
+      if (i === -1) return false;
+      jobs.splice(i, 1);
+      return true;
+    });
+  },
   async saveJob(job: Job) {
     await readJobs(); // make sure the seed exists first
     return update<Job[], Job>(JOBS, [], (jobs) => {

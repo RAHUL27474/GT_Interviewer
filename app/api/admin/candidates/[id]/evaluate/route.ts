@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { requireAdmin } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
 import { runEvaluation } from "@/lib/candidates";
 import { handler, HttpError } from "@/lib/http";
 import { store } from "@/lib/store";
@@ -7,7 +7,7 @@ import { store } from "@/lib/store";
 export const maxDuration = 300;
 
 export const POST = handler(async (_request: Request, ctx: { params: Promise<{ id: string }> }) => {
-  await requireAdmin();
+  await requireStaff();
   const { id } = await ctx.params;
   const updated = await store.updateCandidate(id, (c) => {
     if (!["completed", "evaluation_failed"].includes(c.status)) {

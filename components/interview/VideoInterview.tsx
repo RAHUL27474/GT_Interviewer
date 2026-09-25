@@ -15,6 +15,7 @@ import {
 import { useCamera } from "./useCamera";
 import { enterFullscreen, hasSecondScreen, useProctor } from "./useProctor";
 import { useAwayGuard } from "./useAwayGuard";
+import { useFaceRules } from "./useFaceRules";
 import { useScreenShare } from "./useScreenShare";
 import { useTranscript } from "./useTranscript";
 
@@ -74,7 +75,11 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
   }, []);
 
   // Reopening the link mid-interview (refresh, new tab, came back later) submits it as it is.
+  // Checked once on first load only: later server re-renders of this page must not trigger it.
+  const reopenChecked = useRef(false);
   useEffect(() => {
+    if (reopenChecked.current) return;
+    reopenChecked.current = true;
     if (initialState.status !== "in_progress") return;
     fetch(`${api}/interrupt`, {
       method: "POST",
@@ -126,19 +131,33 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
 
   // Leaving the tab or fullscreen: warnings first, then the interview is submitted as it is.
   const [resharing, setResharing] = useState(false);
+  const terminated = useRef(false);
+  /** A rule was broken: submit the interview as it is and show the "contact HR" screen. */
+  const terminate = async (reason: string) => {
+    if (terminated.current) return;
+    terminated.current = true;
+    try {
+      await fetch(`${api}/interrupt`, { method: "POST", body: JSON.stringify({ reason }) });
+    } catch {
+      // If this fails the heartbeat timeout still ends the interview on the server.
+    }
+    handleInterruptedRef.current();
+  };
   const guard = useAwayGuard({
     active: live,
     graceSeconds: state.awayGraceSeconds,
     maxWarnings: state.maxWarnings,
     paused: resharing,
-    onTerminate: async (reason) => {
-      try {
-        await fetch(`${api}/interrupt`, { method: "POST", body: JSON.stringify({ reason }) });
-      } catch {
-        // If this fails the heartbeat timeout still ends the interview on the server.
-      }
-      handleInterruptedRef.current();
-    },
+    onTerminate: terminate,
+  });
+  const faceRules = useFaceRules({
+    active: live,
+    episodes: proctor.episodes,
+    othersVisible: proctor.othersVisible,
+    strangerVisible: proctor.strangerVisible,
+    maxLookAwayWarnings: state.maxLookAwayWarnings,
+    secondPersonGraceSeconds: state.secondPersonGraceSeconds,
+    onTerminate: terminate,
   });
   useEffect(() => {
     if (!live) return;
@@ -370,7 +389,13 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
               Your camera preview will appear here.
             </div>
           )}
-          {live && proctor.warning && (
+          {live && faceRules.lookWarning && (
+            <div className="absolute inset-x-3 top-12 z-10 rounded-md bg-amber-500 px-3 py-2 text-sm font-bold text-white shadow-lg">
+              ⚠ Warning {faceRules.lookAways} of {state.maxLookAwayWarnings}: please look at the screen.
+              {faceRules.lookAways >= state.maxLookAwayWarnings && " Next time your interview will end."}
+            </div>
+          )}
+          {live && !faceRules.lookWarning && proctor.warning && (
             <div className="absolute inset-x-3 top-12 rounded-md bg-red-600/95 px-3 py-2 text-sm font-semibold text-white shadow-lg">
               ⚠ {proctor.warning}
             </div>
@@ -502,6 +527,22 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
                   </div>
                 )}
 
+                {faceRules.lookAways > 0 && (
+                  <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    ⚠ Looked away {faceRules.lookAways} of {state.maxLookAwayWarnings} times allowed.{" "}
+                    {faceRules.lookAways >= state.maxLookAwayWarnings && "Looking away again will end your interview."}
+                  </p>
+                )}
+                {faceRules.personWarnings > 0 && faceRules.personSecondsLeft === null && (
+                  <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-800">
+                    ⚠ Another person was seen on camera. If anyone appears again, your interview will end.
+                  </p>
+                )}
+                {faceRules.swapWarnings > 0 && faceRules.swapSecondsLeft === null && (
+                  <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-800">
+                    ⚠ Someone else was seen in your place. If it happens again, your interview will end.
+                  </p>
+                )}
                 {guard.violations > 0 && (
                   <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
                     ⚠ {guard.violations} of {state.maxWarnings} warnings used.{" "}
@@ -538,6 +579,30 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
           >
             Share entire screen again
           </Button>
+        </div>
+      )}
+      {live && faceRules.personSecondsLeft !== null && (
+        <div className="fixed inset-0 z-[75] flex flex-col items-center justify-center gap-4 bg-red-950/95 p-6 text-center text-white">
+          <p className="text-sm font-semibold tracking-wide text-red-200 uppercase">Only warning</p>
+          <p className="text-2xl font-bold">Another person is on camera</p>
+          <p className="text-7xl font-bold tabular-nums">{faceRules.personSecondsLeft}</p>
+          <p className="max-w-md text-sm text-red-100">
+            The interview must be taken alone. They must leave the camera&apos;s view within{" "}
+            {faceRules.personSecondsLeft} seconds, or your interview will be submitted as it is. If anyone appears
+            again, the interview ends immediately.
+          </p>
+        </div>
+      )}
+      {live && faceRules.swapSecondsLeft !== null && (
+        <div className="fixed inset-0 z-[76] flex flex-col items-center justify-center gap-4 bg-red-950/95 p-6 text-center text-white">
+          <p className="text-sm font-semibold tracking-wide text-red-200 uppercase">Only warning</p>
+          <p className="text-2xl font-bold">A different person is in front of the camera</p>
+          <p className="text-7xl font-bold tabular-nums">{faceRules.swapSecondsLeft}</p>
+          <p className="max-w-md text-sm text-red-100">
+            This interview must be taken by the candidate who started it. Return to the camera within{" "}
+            {faceRules.swapSecondsLeft} seconds, or your interview will be submitted as it is. If it happens again, the
+            interview ends immediately.
+          </p>
         </div>
       )}
       {live && guard.away && !resharing && (
@@ -692,6 +757,11 @@ function SetupPanel({
         <li>
           Your camera and <strong>entire screen are recorded</strong>, and the interview runs in fullscreen. Your face must
           stay visible; typing, phones and other people are flagged.
+        </li>
+        <li>
+          <strong>Look at the screen and be alone.</strong> Looking away gives a warning ({state.maxLookAwayWarnings}{" "}
+          allowed); the next time ends the interview. If another person appears on camera, they have{" "}
+          {state.secondPersonGraceSeconds} seconds to leave; a second appearance ends the interview.
         </li>
         <li>
           <strong>Stay on this tab, in fullscreen.</strong> Leaving gives you a warning ({state.maxWarnings} allowed). Leaving

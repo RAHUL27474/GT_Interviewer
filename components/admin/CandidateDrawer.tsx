@@ -11,9 +11,11 @@ interface Props {
   joiningLabels: Record<string, string>;
   onClose: () => void;
   onChanged: () => void;
+  /** Managers only. */
+  canDelete: boolean;
 }
 
-export function CandidateDrawer({ id, joiningLabels, onClose, onChanged }: Props) {
+export function CandidateDrawer({ id, joiningLabels, onClose, onChanged, canDelete }: Props) {
   const [c, setC] = useState<Candidate | null>(null);
   const [error, setError] = useState("");
 
@@ -62,6 +64,14 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged }: Props
     }
   }
 
+  async function deleteCandidate() {
+    if (!confirm("Permanently delete this candidate, their resume and all interview recordings? This can't be undone.")) return;
+    const res = await fetch(`/api/admin/candidates/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) return setError((await res.json().catch(() => ({}))).error || "Could not delete.");
+    onChanged();
+    onClose();
+  }
+
   async function reevaluate() {
     const res = await fetch(`/api/admin/candidates/${encodeURIComponent(id)}/evaluate`, { method: "POST" });
     if (!res.ok) setError((await res.json().catch(() => ({}))).error || "Could not start evaluation.");
@@ -77,7 +87,15 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged }: Props
         </Button>
         {error && <Alert>{error}</Alert>}
         {!c && !error && <p className="text-slate-400">Loading…</p>}
-        {c && <Detail c={c} joiningLabels={joiningLabels} onReevaluate={reevaluate} onReinterview={allowReinterview} />}
+        {c && (
+          <Detail
+            c={c}
+            joiningLabels={joiningLabels}
+            onReevaluate={reevaluate}
+            onReinterview={allowReinterview}
+            onDelete={canDelete ? deleteCandidate : undefined}
+          />
+        )}
       </aside>
     </>
   );
@@ -88,11 +106,13 @@ function Detail({
   joiningLabels,
   onReevaluate,
   onReinterview,
+  onDelete,
 }: {
   c: Candidate;
   joiningLabels: Record<string, string>;
   onReevaluate: () => void;
   onReinterview: () => void;
+  onDelete?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const integrity = computeIntegrity(c.proctoring.events);
@@ -192,6 +212,11 @@ function Detail({
         >
           {copied ? "Copied ✓" : "Copy interview link"}
         </Button>
+        {onDelete && (
+          <Button variant="ghost" onClick={onDelete} className="!border-red-200 !text-red-600 hover:!bg-red-50">
+            Delete candidate
+          </Button>
+        )}
       </div>
 
       <dl className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-1.5 text-sm">
@@ -315,7 +340,9 @@ function Detail({
                 )}
                 {a && (
                   <div className="mb-3">
-                    <p className="mb-1 text-xs font-medium text-slate-500">Auto transcript (may contain recognition errors)</p>
+                    <p className="mb-1 text-xs font-medium text-slate-500">
+                      Auto transcript{a.transcriptSource === "whisper" && " (Whisper)"} (may contain recognition errors)
+                    </p>
                     <div className="rounded-md bg-slate-50 p-3 text-sm whitespace-pre-wrap">
                       {a.transcript || <em className="text-slate-400">(no speech detected; watch the video)</em>}
                     </div>

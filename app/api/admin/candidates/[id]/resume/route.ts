@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { requireAdmin } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
 import { handler, HttpError } from "@/lib/http";
 import { RESUME_DIR, store } from "@/lib/store";
 
@@ -11,7 +11,7 @@ const MIME: Record<string, string> = {
 };
 
 export const GET = handler(async (_request: Request, ctx: { params: Promise<{ id: string }> }) => {
-  await requireAdmin();
+  await requireStaff();
   const c = await store.getCandidate((await ctx.params).id);
   if (!c) throw new HttpError(404, "Candidate not found.");
   const data = await fs.readFile(path.join(RESUME_DIR, c.resume.storedAs));

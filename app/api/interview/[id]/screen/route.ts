@@ -14,7 +14,9 @@ import { mediaDir, store } from "@/lib/store";
  */
 export const POST = handler(async (request: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
-  const form = await request.formData();
+  const form = await request.formData().catch(() => {
+    throw new HttpError(400, "Upload was incomplete. Please try again.");
+  });
   const sessionId = form.get("sessionId");
   const segment = Number(form.get("segment"));
   const seq = Number(form.get("seq"));

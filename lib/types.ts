@@ -1,3 +1,27 @@
+export type StaffRole = "hr" | "manager" | "superadmin";
+
+/** A dashboard account. Applicants don't have accounts; they use their private interview link. */
+export interface StaffUser {
+  id: string;
+  email: string;
+  name: string;
+  role: StaffRole;
+  /** "scrypt:<salt>:<hash>" */
+  passwordHash: string;
+  active: boolean;
+  /** When the account was deactivated; it is deleted automatically after ACCOUNT_DELETE_AFTER_DAYS. */
+  deactivatedAt?: string;
+  /** Bumped on password reset / deactivation to sign out existing sessions. */
+  sessionVersion: number;
+  createdAt: string;
+  lastLoginAt?: string;
+}
+
+export type PublicStaffUser = Omit<StaffUser, "passwordHash" | "sessionVersion"> & {
+  /** For deactivated accounts: when the automatic deletion will happen. */
+  deletesAt?: string;
+};
+
 export interface Job {
   id: string;
   title: string;
@@ -7,6 +31,8 @@ export interface Job {
   salaryMin: number | null;
   salaryMax: number | null;
   active: boolean;
+  /** Staff email of whoever last created/edited this job. */
+  updatedBy?: string;
 }
 
 export type PublicJob = Pick<Job, "id" | "title" | "location" | "description">;
@@ -20,8 +46,12 @@ export interface Question {
 }
 
 export interface Answer {
-  /** Browser speech-to-text of the spoken answer. May contain recognition errors. */
+  /** Speech-to-text of the spoken answer. May contain recognition errors. */
   transcript: string;
+  /** Where `transcript` came from; missing means the browser. */
+  transcriptSource?: "browser" | "whisper";
+  /** The original browser transcript, kept when Whisper replaced it. */
+  browserTranscript?: string;
   timeTakenSec: number;
   submittedAt: string;
   /** File names inside data/videos/<candidateId>/ */
@@ -51,6 +81,7 @@ export type CandidateStatus = "ready" | "in_progress" | "evaluating" | "evaluati
 export type ProctorEventType =
   | "face_missing"
   | "multiple_faces"
+  | "different_person"
   | "looking_away"
   | "phone_detected"
   | "left_window"
@@ -88,6 +119,8 @@ export interface IntegritySummary {
 
 export interface PreviousAttempt {
   archivedAt: string;
+  /** Staff email of whoever allowed the re-interview. */
+  archivedBy?: string;
   questions: Question[];
   answers: Answer[];
   proctoring: { events: ProctorEvent[] };
@@ -179,4 +212,6 @@ export interface InterviewState {
   hrContact: string;
   maxWarnings: number;
   awayGraceSeconds: number;
+  maxLookAwayWarnings: number;
+  secondPersonGraceSeconds: number;
 }

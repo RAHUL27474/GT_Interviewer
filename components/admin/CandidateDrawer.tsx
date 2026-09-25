@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Candidate } from "@/lib/types";
 import { Alert, Button, Pill } from "../ui";
-import { RecommendationPill, Signed, STATUS } from "./shared";
+import { computeIntegrity, PROCTOR_EVENTS } from "@/lib/proctoring";
+import { IntegrityPill, RecommendationPill, Signed, STATUS } from "./shared";
 
 interface Props {
   id: string;
@@ -50,6 +51,17 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged }: Props
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  async function allowReinterview() {
+    if (!confirm("Archive this attempt and let the candidate take the interview again with new questions?")) return;
+    setError("");
+    const res = await fetch(`/api/admin/candidates/${encodeURIComponent(id)}/reset`, { method: "POST" });
+    if (!res.ok) setError((await res.json().catch(() => ({}))).error || "Could not reset the interview.");
+    else {
+      await load();
+      onChanged();
+    }
+  }
+
   async function reevaluate() {
     const res = await fetch(`/api/admin/candidates/${encodeURIComponent(id)}/evaluate`, { method: "POST" });
     if (!res.ok) setError((await res.json().catch(() => ({}))).error || "Could not start evaluation.");
@@ -65,7 +77,7 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged }: Props
         </Button>
         {error && <Alert>{error}</Alert>}
         {!c && !error && <p className="text-slate-400">Loading…</p>}
-        {c && <Detail c={c} joiningLabels={joiningLabels} onReevaluate={reevaluate} />}
+        {c && <Detail c={c} joiningLabels={joiningLabels} onReevaluate={reevaluate} onReinterview={allowReinterview} />}
       </aside>
     </>
   );
@@ -75,11 +87,20 @@ function Detail({
   c,
   joiningLabels,
   onReevaluate,
+  onReinterview,
 }: {
   c: Candidate;
   joiningLabels: Record<string, string>;
   onReevaluate: () => void;
+  onReinterview: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
+  const integrity = computeIntegrity(c.proctoring.events);
+  const startMs = new Date(c.startedAt ?? c.createdAt).getTime();
+  const offset = (at: string) => {
+    const sec = Math.max(0, Math.round((new Date(at).getTime() - startMs) / 1000));
+    return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+  };
   const s = c.scores;
   const ev = c.evaluation;
   const canReevaluate = c.status === "completed" || c.status === "evaluation_failed";
@@ -103,7 +124,7 @@ function Detail({
       ),
     ],
     ["Applied", new Date(c.createdAt).toLocaleString()],
-    ["Tab switches", <Flag key="t" n={c.integrity.tabSwitches} />],
+    ["Previous attempts", c.attempts?.length ?? 0],
   ];
   const media = (file: string) => `/api/admin/candidates/${encodeURIComponent(c.id)}/media/${encodeURIComponent(file)}`;
 
@@ -116,6 +137,16 @@ function Detail({
         </div>
       </div>
 
+      {c.interruption && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="font-semibold">Interview interrupted, auto-submitted with {c.interruption.answeredCount} of{" "}
+            {c.questions.length} answers</p>
+          <p className="mt-0.5">
+            {c.interruption.reason} · {new Date(c.interruption.at).toLocaleString()}. Unanswered questions scored 0. The
+            candidate was asked to contact HR for a re-interview.
+          </p>
+        </div>
+      )}
       {c.evaluationError && <Alert>Evaluation error: {c.evaluationError}</Alert>}
 
       {s && (
@@ -146,6 +177,21 @@ function Detail({
             Re-run AI evaluation
           </Button>
         )}
+        {canReevaluate && (
+          <Button variant="ghost" onClick={onReinterview}>
+            Allow re-interview
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          onClick={() => {
+            navigator.clipboard.writeText(`${window.location.origin}/interview/${c.id}`);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+        >
+          {copied ? "Copied ✓" : "Copy interview link"}
+        </Button>
       </div>
 
       <dl className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-1.5 text-sm">
@@ -156,6 +202,70 @@ function Detail({
           </div>
         ))}
       </dl>
+
+      <div>
+        <h3 className="mb-2 font-semibold">Screen recording</h3>
+        {c.screenRecording?.segments.length ? (
+          <div className="space-y-3">
+            {c.screenRecording.segments.map((seg, i) => (
+              <div key={seg.file}>
+                <p className="mb-1 text-xs text-slate-500">
+                  {c.screenRecording!.segments.length > 1 && `Part ${i + 1} · `}
+                  started {offset(seg.startedAt)} into the interview · {(seg.bytes / 1024 / 1024).toFixed(1)} MB
+                  {i > 0 && " · re-shared after sharing was stopped"}
+                </p>
+                <video src={media(seg.file)} controls preload="metadata" className="aspect-video w-full rounded-md bg-slate-900" />
+              </div>
+            ))}
+            <p className="text-xs text-slate-500">
+              Covers the whole interview, including thinking time. Seeking may be limited; press play and use the speed
+              control to skim.
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">No screen recording.</p>
+        )}
+      </div>
+
+      <div>
+        <h3 className="mb-2 flex items-center gap-2 font-semibold">
+          Live proctoring <IntegrityPill level={integrity.level} />
+        </h3>
+        {c.proctoring.events.length === 0 ? (
+          <p className="text-sm text-slate-400">No proctoring events recorded.</p>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {Object.entries(integrity.counts).map(([type, n]) => (
+                <Pill key={type} tone="warn">
+                  {PROCTOR_EVENTS[type as keyof typeof PROCTOR_EVENTS].label} × {n}
+                </Pill>
+              ))}
+            </div>
+            <ol className="max-h-80 space-y-2 overflow-y-auto rounded-lg border border-slate-200 p-3 text-sm">
+              {c.proctoring.events.map((e, i) => (
+                <li key={i} className="flex items-start gap-3">
+                  <span className="w-12 shrink-0 font-mono text-xs text-slate-500 tabular-nums">{offset(e.at)}</span>
+                  <div className="flex-1">
+                    <span className="font-medium">{PROCTOR_EVENTS[e.type].label}</span>
+                    <span className="text-slate-500">
+                      {e.questionIndex !== null && ` · Q${e.questionIndex + 1}`} · {e.detail}
+                    </span>
+                  </div>
+                  {e.snapshot && (
+                    <a href={media(e.snapshot)} target="_blank" rel="noopener noreferrer">
+                      <img src={media(e.snapshot)} alt="Snapshot at event" className="h-12 rounded border border-slate-200" />
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ol>
+            <p className="mt-1 text-xs text-slate-500">
+              Times are from interview start. Flags are signals for review, not proof. Check the video before deciding.
+            </p>
+          </>
+        )}
+      </div>
 
       {ev && (
         <div>
@@ -266,8 +376,4 @@ function BulletList({ title, items }: { title: string; items: string[] }) {
       )}
     </div>
   );
-}
-
-function Flag({ n }: { n: number }) {
-  return n ? <span className="font-semibold text-red-600">{n}</span> : <span>0</span>;
 }

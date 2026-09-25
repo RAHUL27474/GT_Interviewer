@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { after } from "next/server";
-import { interviewState, runEvaluation } from "@/lib/candidates";
+import { assertActiveSession, interviewState, runEvaluation } from "@/lib/candidates";
 import { config } from "@/lib/config";
 import { handler, HttpError } from "@/lib/http";
 import { mediaDir, store } from "@/lib/store";
@@ -16,12 +16,13 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
   const { id } = await ctx.params;
   const form = await request.formData();
   const index = Number(form.get("index"));
+  const sessionId = form.get("sessionId");
 
   // Check before writing any files; re-checked under the store lock below.
   const current = await store.getCandidate(id);
   if (!current) throw new HttpError(404, "Interview not found.");
-  if (!["ready", "in_progress"].includes(current.status)) throw new HttpError(409, "This interview is already submitted.");
-  if (index !== current.answers.length) throw new HttpError(409, "Answer is out of order. Please refresh the page.");
+  assertActiveSession(current, sessionId);
+  if (index !== current.answers.length) throw new HttpError(409, "Answer is out of order.");
 
   const video = form.get("video");
   const snapshots = form.getAll("snapshots").slice(0, config.snapshotsPerAnswer);
@@ -53,8 +54,8 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
 
     let finished = false;
     const updated = await store.updateCandidate(id, (c) => {
-      if (!["ready", "in_progress"].includes(c.status)) throw new HttpError(409, "This interview is already submitted.");
-      if (index !== c.answers.length) throw new HttpError(409, "Answer is out of order. Please refresh the page.");
+      assertActiveSession(c, sessionId);
+      if (index !== c.answers.length) throw new HttpError(409, "Answer is out of order.");
       c.answers.push({
         transcript: String(form.get("transcript") ?? "").slice(0, config.maxTranscriptChars),
         timeTakenSec: Math.max(0, Math.round(Number(form.get("timeTakenSec")) || 0)),
@@ -62,13 +63,10 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
         video: videoName,
         snapshots: snapshotNames,
       });
-      // Client sends a running total; keep the highest we've seen.
-      c.integrity.tabSwitches = Math.max(c.integrity.tabSwitches, Number(form.get("tabSwitches")) || 0);
-      c.startedAt ??= new Date().toISOString();
-      c.status = "in_progress";
       if (c.answers.length === c.questions.length) {
         c.status = "evaluating";
         c.completedAt = new Date().toISOString();
+        delete c.sessionId;
         finished = true;
       }
     });

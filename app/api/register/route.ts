@@ -80,7 +80,7 @@ export const POST = handler(async (request: Request) => {
     status: "ready",
     questions,
     answers: [],
-    integrity: { tabSwitches: 0 },
+    proctoring: { events: [] },
   };
   await store.addCandidate(candidate);
   return Response.json({ id });

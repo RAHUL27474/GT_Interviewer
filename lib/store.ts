@@ -50,12 +50,44 @@ async function readJobs(): Promise<Job[]> {
   return seed;
 }
 
+/**
+ * Upgrades records saved by older versions of the app, in place.
+ * Before live proctoring, only a tab-switch count was stored; keep it as a single event.
+ */
+function upgrade(c: Candidate): Candidate {
+  if (!c.proctoring) {
+    const legacy = c as Candidate & { integrity?: { tabSwitches?: number } };
+    const switches = legacy.integrity?.tabSwitches ?? 0;
+    c.proctoring = {
+      events: switches
+        ? [
+            {
+              type: "left_window",
+              at: c.completedAt ?? c.createdAt,
+              questionIndex: null,
+              detail: `${switches} tab switch(es), recorded before live proctoring was added`,
+              snapshot: null,
+            },
+          ]
+        : [],
+    };
+    delete legacy.integrity;
+  }
+  return c;
+}
+
+async function readCandidates() {
+  const all = await read<Record<string, Candidate>>(CANDIDATES, {});
+  for (const c of Object.values(all)) upgrade(c);
+  return all;
+}
+
 export const store = {
   async listCandidates(): Promise<Candidate[]> {
-    return Object.values(await read<Record<string, Candidate>>(CANDIDATES, {}));
+    return Object.values(await readCandidates());
   },
   async getCandidate(id: string): Promise<Candidate | null> {
-    return (await read<Record<string, Candidate>>(CANDIDATES, {}))[id] ?? null;
+    return (await readCandidates())[id] ?? null;
   },
   addCandidate(candidate: Candidate) {
     return update<Record<string, Candidate>, void>(CANDIDATES, {}, (all) => {
@@ -66,7 +98,7 @@ export const store = {
   updateCandidate(id: string, fn: (c: Candidate) => void | Promise<void>) {
     return update<Record<string, Candidate>, Candidate | null>(CANDIDATES, {}, async (all) => {
       if (!all[id]) return null;
-      await fn(all[id]);
+      await fn(upgrade(all[id]));
       return all[id];
     });
   },

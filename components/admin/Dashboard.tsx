@@ -6,9 +6,9 @@ import type { CandidateSummary, Job } from "@/lib/types";
 import { Button, cn, inputClass, Pill } from "../ui";
 import { CandidateDrawer } from "./CandidateDrawer";
 import { JobsPanel } from "./JobsPanel";
-import { RecommendationPill, Signed, STATUS } from "./shared";
+import { IntegrityPill, RecommendationPill, Signed, STATUS } from "./shared";
 
-type SortKey = "fullName" | "jobTitle" | "createdAt" | "status" | "totalExperience" | "expectedCTC" | "interview" | "joining" | "salary" | "total";
+type SortKey = "fullName" | "jobTitle" | "createdAt" | "status" | "totalExperience" | "expectedCTC" | "interview" | "joining" | "salary" | "total" | "integrity";
 
 const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
   { key: "fullName", label: "Candidate" },
@@ -21,10 +21,12 @@ const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
   { key: "joining", label: "Joining", numeric: true },
   { key: "salary", label: "Salary", numeric: true },
   { key: "total", label: "Total", numeric: true },
+  { key: "integrity", label: "Integrity" },
 ];
 
 function sortValue(c: CandidateSummary, key: SortKey): string | number {
   if (key === "total") return c.scores?.total ?? -Infinity;
+  if (key === "integrity") return c.integrity.points;
   if (key === "interview" || key === "joining" || key === "salary") return c.scores?.[key].points ?? -Infinity;
   return c[key];
 }
@@ -66,12 +68,13 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
   ];
 
   function exportCsv() {
-    const header = ["Name", "Email", "Phone", "Position", "Applied", "Status", "Experience", "Current CTC", "Expected CTC", "Joining", "Interview (/70)", "Joining pts", "Salary pts", "Total", "Recommendation"];
+    const header = ["Name", "Email", "Phone", "Position", "Applied", "Status", "Experience", "Current CTC", "Expected CTC", "Joining", "Interview (/70)", "Joining pts", "Salary pts", "Total", "Recommendation", "Interrupted", "Integrity risk", "Proctoring flags"];
     const body = rows.map((c) => [
       c.fullName, c.email, c.phone, c.jobTitle, c.createdAt.slice(0, 10), STATUS[c.status].label, c.totalExperience,
       c.currentCTC, c.expectedCTC, joiningLabels[c.joiningCategory] ?? c.joiningCategory,
       c.scores?.interview.points ?? "", c.scores?.joining.points ?? "", c.scores?.salary.points ?? "",
-      c.scores?.total ?? "", c.scores?.recommendation ?? "",
+      c.scores?.total ?? "", c.scores?.recommendation ?? "", c.interrupted ? "Yes" : "No", c.integrity.level,
+      Object.values(c.integrity.counts).reduce((a, b) => a + (b ?? 0), 0),
     ]);
     const csv = [header, ...body].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\r\n");
     const a = document.createElement("a");
@@ -184,6 +187,11 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
                           {STATUS[c.status].label}
                           {c.status === "in_progress" && ` ${c.answered}/${c.totalQuestions}`}
                         </Pill>
+                        {c.interrupted && (
+                          <span className="ml-1">
+                            <Pill tone="bad">Interrupted</Pill>
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{c.totalExperience}</td>
                       <td className="px-3 py-2.5 text-right whitespace-nowrap tabular-nums">
@@ -193,6 +201,9 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
                       <td className="px-3 py-2.5 text-right">{s ? <Signed value={s.joining.points} /> : "–"}</td>
                       <td className="px-3 py-2.5 text-right">{s ? <Signed value={s.salary.points} /> : "–"}</td>
                       <td className="px-3 py-2.5 text-right text-base">{s ? <Signed value={s.total} /> : "–"}</td>
+                      <td className="px-3 py-2.5">
+                        <IntegrityPill level={c.integrity.level} />
+                      </td>
                       <td className="px-3 py-2.5">{s && <RecommendationPill label={s.recommendation} />}</td>
                     </tr>
                   );

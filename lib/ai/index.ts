@@ -158,7 +158,7 @@ answer, followed by webcam snapshots taken while the candidate was answering.`,
 ${q.expected_points.map((p) => `- ${p}`).join("\n")}
 </strong_answer_covers>
 <answer_transcript time_taken_seconds="${a?.timeTakenSec ?? "?"}">
-${a?.transcript?.trim() || "(no speech detected)"}
+${!a ? "(not answered: the interview was interrupted)" : a.transcript.trim() || "(no speech detected)"}
 </answer_transcript>
 </question>`,
     });

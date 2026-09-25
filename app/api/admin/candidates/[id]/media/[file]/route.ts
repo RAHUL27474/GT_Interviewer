@@ -14,7 +14,10 @@ export const GET = handler(async (request: Request, ctx: { params: Promise<{ id:
   const { id, file } = await ctx.params;
   const c = await store.getCandidate(id);
   // Only serve files this candidate's answers actually reference (also blocks path tricks).
-  const known = c?.answers.some((a) => a.video === file || a.snapshots.includes(file));
+  const known =
+    c?.answers.some((a) => a.video === file || a.snapshots.includes(file)) ||
+    c?.proctoring.events.some((e) => e.snapshot === file) ||
+    c?.screenRecording?.segments.some((s) => s.file === file);
   if (!c || !known) throw new HttpError(404, "File not found.");
 
   const filePath = path.join(mediaDir(id), file);

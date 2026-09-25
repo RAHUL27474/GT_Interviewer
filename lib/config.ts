@@ -15,6 +15,17 @@ function pickProvider(): AiProvider {
 
 export const config = {
   companyName: process.env.COMPANY_NAME || "Careers",
+  /** Shown to candidates whose interview was interrupted, e.g. "hr@company.com or +91 98xxxxxxxx". */
+  hrContact: process.env.HR_CONTACT || "the HR team",
+  /** An in-progress interview with no heartbeat for this long is auto-submitted as interrupted. */
+  heartbeatTimeoutSec: Number(process.env.HEARTBEAT_TIMEOUT_SECONDS || 90),
+  /** Leaving the tab or fullscreen: this many warnings, then the next time ends the interview. */
+  maxWarnings: Number(process.env.MAX_WARNINGS || 2),
+  /** Leaving the tab or fullscreen for longer than this ends the interview. */
+  awayGraceSeconds: Number(process.env.AWAY_GRACE_SECONDS || 10),
+  maxProctorEvents: 300,
+  /** One screen-recording chunk (~10 s at low bitrate is well under this). */
+  maxScreenChunkBytes: 20 * 1024 * 1024,
   adminPassword: process.env.ADMIN_PASSWORD || "",
   questionCount: Number(process.env.QUESTION_COUNT || 6),
   minutesPerQuestion: Number(process.env.MINUTES_PER_QUESTION || 3),

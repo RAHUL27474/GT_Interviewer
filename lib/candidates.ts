@@ -1,8 +1,13 @@
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { evaluateInterview, generateQuestions, resumeToPart } from "./ai";
 import { config } from "./config";
-import { evaluateInterview } from "./ai";
+import { HttpError } from "./http";
+import { computeIntegrity } from "./proctoring";
 import { computeScores } from "./scoring";
-import { store } from "./store";
-import type { Candidate, CandidateSummary, InterviewState } from "./types";
+import { RESUME_DIR, store } from "./store";
+import type { Candidate, CandidateSummary, Evaluation, InterviewState } from "./types";
 
 export function interviewState(c: Candidate): InterviewState {
   const answered = c.answers.length;
@@ -17,6 +22,11 @@ export function interviewState(c: Candidate): InterviewState {
     prepSeconds: config.prepSeconds,
     // Only the current question is revealed, so candidates can't preview the rest.
     nextQuestion: open ? { index: answered, text: c.questions[answered].question } : null,
+    interrupted: Boolean(c.interruption),
+    interruptionReason: c.interruption?.reason ?? null,
+    hrContact: config.hrContact,
+    maxWarnings: config.maxWarnings,
+    awayGraceSeconds: config.awayGraceSeconds,
   };
 }
 
@@ -37,15 +47,73 @@ export function toSummary(c: Candidate): CandidateSummary {
     answered: c.answers.length,
     totalQuestions: c.questions.length,
     scores: c.scores ?? null,
+    interrupted: Boolean(c.interruption),
+    integrity: computeIntegrity(c.proctoring.events),
   };
 }
 
-/** Grades a finished interview and stores the result. Never throws. */
+/** Throws unless `sessionId` is the live session of an in-progress interview. Updates lastSeenAt. */
+export function assertActiveSession(c: Candidate, sessionId: unknown) {
+  if (c.interruption || c.status !== "in_progress") throw new HttpError(409, "This interview is no longer active.");
+  if (!c.sessionId || sessionId !== c.sessionId) throw new HttpError(409, "This interview is open in another window.");
+  c.lastSeenAt = new Date().toISOString();
+}
+
+/**
+ * Ends an in-progress interview early and submits what was answered.
+ * Returns true if this call interrupted it (false if it was not in progress).
+ */
+export async function interruptInterview(id: string, reason: string): Promise<boolean> {
+  let interrupted = false;
+  await store.updateCandidate(id, (c) => {
+    if (c.status !== "in_progress") return;
+    const now = new Date().toISOString();
+    c.interruption = { at: now, reason, answeredCount: c.answers.length };
+    c.completedAt = now;
+    c.status = "evaluating";
+    delete c.sessionId;
+    interrupted = true;
+  });
+  return interrupted;
+}
+
+/** Auto-submits in-progress interviews whose browser stopped sending heartbeats (closed, crashed, offline). */
+export async function sweepStaleInterviews() {
+  const cutoff = Date.now() - config.heartbeatTimeoutSec * 1000;
+  const stale = (await store.listCandidates()).filter(
+    (c) => c.status === "in_progress" && new Date(c.lastSeenAt ?? c.startedAt ?? 0).getTime() < cutoff,
+  );
+  for (const c of stale) {
+    if (await interruptInterview(c.id, "Connection lost or the interview window was closed")) await runEvaluation(c.id);
+  }
+}
+
+const UNANSWERED_FEEDBACK = "Not answered: the interview was interrupted before this question.";
+
+/** Grades a finished (or interrupted) interview and stores the result. Never throws. */
 export async function runEvaluation(id: string) {
   try {
     const c = await store.getCandidate(id);
     if (!c) return;
-    const evaluation = await evaluateInterview(c);
+
+    let evaluation: Evaluation;
+    if (c.answers.length === 0) {
+      // Nothing to grade; skip the AI call.
+      evaluation = {
+        evaluations: c.questions.map(() => ({ score: 0, feedback: UNANSWERED_FEEDBACK })),
+        summary: "The interview was interrupted before any answer was submitted.",
+        strengths: [],
+        concerns: [],
+        proctoringNotes: [],
+      };
+    } else {
+      evaluation = await evaluateInterview(c);
+      // Unanswered questions always score 0, whatever the AI returned.
+      evaluation.evaluations = evaluation.evaluations.map((e, i) =>
+        i < c.answers.length ? e : { score: 0, feedback: UNANSWERED_FEEDBACK },
+      );
+    }
+
     const scores = computeScores({
       questionScores: evaluation.evaluations.map((e) => e.score),
       joiningCategory: c.joiningCategory,
@@ -75,4 +143,50 @@ export async function runEvaluation(id: string) {
 export async function resumePendingEvaluations() {
   const pending = (await store.listCandidates()).filter((c) => c.status === "evaluating");
   await Promise.all(pending.map((c) => runEvaluation(c.id)));
+}
+
+/**
+ * HR-approved re-interview: archives the current attempt and issues fresh questions
+ * (the candidate has already seen the old ones). The same interview link works again.
+ */
+export async function resetForReinterview(id: string) {
+  const c = await store.getCandidate(id);
+  if (!c) throw new HttpError(404, "Candidate not found.");
+  if (!["completed", "evaluation_failed"].includes(c.status)) {
+    throw new HttpError(409, "Only finished or interrupted interviews can be reset.");
+  }
+
+  const ext = path.extname(c.resume.storedAs);
+  const buffer = await fs.readFile(path.join(RESUME_DIR, c.resume.storedAs));
+  const questions = await generateQuestions({
+    job: c.jobSnapshot,
+    candidate: c,
+    resumePart: await resumeToPart(buffer, ext),
+  });
+
+  await store.updateCandidate(id, (cand) => {
+    (cand.attempts ??= []).push({
+      archivedAt: new Date().toISOString(),
+      questions: cand.questions,
+      answers: cand.answers,
+      proctoring: cand.proctoring,
+      screenRecording: cand.screenRecording,
+      startedAt: cand.startedAt,
+      completedAt: cand.completedAt,
+      interruption: cand.interruption,
+      evaluation: cand.evaluation,
+      scores: cand.scores,
+    });
+    cand.questions = questions;
+    cand.answers = [];
+    cand.proctoring = { events: [] };
+    cand.status = "ready";
+    for (const k of ["startedAt", "completedAt", "evaluatedAt", "interruption", "evaluation", "scores", "evaluationError", "sessionId", "lastSeenAt", "screenRecording"] as const) {
+      delete cand[k];
+    }
+  });
+}
+
+export function newSessionId() {
+  return crypto.randomBytes(16).toString("hex");
 }

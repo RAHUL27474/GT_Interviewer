@@ -48,6 +48,57 @@ export interface Scores {
 
 export type CandidateStatus = "ready" | "in_progress" | "evaluating" | "evaluation_failed" | "completed";
 
+export type ProctorEventType =
+  | "face_missing"
+  | "multiple_faces"
+  | "looking_away"
+  | "phone_detected"
+  | "left_window"
+  | "fullscreen_exit"
+  | "typing"
+  | "copy_attempt"
+  | "second_screen"
+  | "screen_share_stopped"
+  | "proctoring_unavailable";
+
+export interface ProctorEvent {
+  type: ProctorEventType;
+  at: string;
+  /** Question on screen when it happened (null before the first question). */
+  questionIndex: number | null;
+  detail: string;
+  /** Snapshot file in data/videos/<candidateId>/, if one was taken. */
+  snapshot: string | null;
+}
+
+/** One continuous screen recording; a new segment starts each time the candidate re-shares. */
+export interface ScreenSegment {
+  /** File in data/videos/<candidateId>/ */
+  file: string;
+  startedAt: string;
+  chunks: number;
+  bytes: number;
+}
+
+export interface IntegritySummary {
+  level: "low" | "medium" | "high";
+  points: number;
+  counts: Partial<Record<ProctorEventType, number>>;
+}
+
+export interface PreviousAttempt {
+  archivedAt: string;
+  questions: Question[];
+  answers: Answer[];
+  proctoring: { events: ProctorEvent[] };
+  screenRecording?: Candidate["screenRecording"];
+  startedAt?: string;
+  completedAt?: string;
+  interruption?: Candidate["interruption"];
+  evaluation?: Evaluation;
+  scores?: Scores;
+}
+
 export interface CandidateProfile {
   fullName: string;
   email: string;
@@ -71,7 +122,17 @@ export interface Candidate extends CandidateProfile {
   status: CandidateStatus;
   questions: Question[];
   answers: Answer[];
-  integrity: { tabSwitches: number };
+  proctoring: { events: ProctorEvent[] };
+  /** Whole-interview screen recording, uploaded in chunks while the interview runs. */
+  screenRecording?: { segments: ScreenSegment[] };
+  /** Issued when the interview starts; only this browser session may submit answers. */
+  sessionId?: string;
+  /** Last heartbeat/answer/event from the active session. */
+  lastSeenAt?: string;
+  /** Set when the interview stopped midway and was auto-submitted. */
+  interruption?: { at: string; reason: string; answeredCount: number };
+  /** Earlier attempts, kept for audit when HR allows a re-interview. */
+  attempts?: PreviousAttempt[];
   startedAt?: string;
   completedAt?: string;
   evaluatedAt?: string;
@@ -99,6 +160,8 @@ export interface CandidateSummary
   answered: number;
   totalQuestions: number;
   scores: Scores | null;
+  interrupted: boolean;
+  integrity: IntegritySummary;
 }
 
 export interface InterviewState {
@@ -110,4 +173,10 @@ export interface InterviewState {
   minutesPerQuestion: number;
   prepSeconds: number;
   nextQuestion: { index: number; text: string } | null;
+  /** True once the interview has been auto-submitted after stopping midway. */
+  interrupted: boolean;
+  interruptionReason: string | null;
+  hrContact: string;
+  maxWarnings: number;
+  awayGraceSeconds: number;
 }

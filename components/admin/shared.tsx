@@ -1,4 +1,5 @@
-import type { CandidateStatus } from "@/lib/types";
+import { INTEGRITY_LABEL } from "@/lib/proctoring";
+import type { CandidateStatus, IntegritySummary } from "@/lib/types";
 import { cn, Pill, type Tone } from "../ui";
 
 export const STATUS: Record<CandidateStatus, { label: string; tone: Tone }> = {
@@ -13,6 +14,12 @@ const REC_TONE: Record<string, Tone> = { "Strong Hire": "good", Hire: "good", Ma
 
 export function RecommendationPill({ label }: { label: string }) {
   return <Pill tone={REC_TONE[label] ?? "neutral"}>{label}</Pill>;
+}
+
+const INTEGRITY_TONE: Record<IntegritySummary["level"], Tone> = { low: "good", medium: "warn", high: "bad" };
+
+export function IntegrityPill({ level }: { level: IntegritySummary["level"] }) {
+  return <Pill tone={INTEGRITY_TONE[level]}>{INTEGRITY_LABEL[level]}</Pill>;
 }
 
 /** Number with a sign and green/red colour: +15, −5, 0. */

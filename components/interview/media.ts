@@ -95,7 +95,7 @@ export function uploadWithProgress(
   url: string,
   body: FormData,
   onProgress: (fraction: number) => void,
-): Promise<{ ok: boolean; data: Record<string, unknown> }> {
+): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
@@ -105,7 +105,7 @@ export function uploadWithProgress(
       try {
         data = JSON.parse(xhr.responseText);
       } catch {}
-      resolve({ ok: xhr.status >= 200 && xhr.status < 300, data });
+      resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
     };
     xhr.onerror = () => reject(new Error("Network error while uploading."));
     xhr.send(body);

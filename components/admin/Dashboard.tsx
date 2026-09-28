@@ -6,9 +6,21 @@ import type { CandidateSummary, Job } from "@/lib/types";
 import { Button, cn, inputClass, Pill } from "../ui";
 import { CandidateDrawer } from "./CandidateDrawer";
 import { JobsPanel } from "./JobsPanel";
-import { IntegrityPill, RecommendationPill, Signed, STATUS } from "./shared";
+import { DecisionPill, IntegrityPill, RecommendationPill, Signed, STATUS } from "./shared";
 
-type SortKey = "fullName" | "jobTitle" | "createdAt" | "status" | "totalExperience" | "expectedCTC" | "interview" | "joining" | "salary" | "total" | "integrity";
+type SortKey =
+  | "fullName"
+  | "jobTitle"
+  | "createdAt"
+  | "status"
+  | "totalExperience"
+  | "expectedCTC"
+  | "interview"
+  | "joining"
+  | "salary"
+  | "total"
+  | "integrity"
+  | "decision";
 
 const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
   { key: "fullName", label: "Candidate" },
@@ -22,13 +34,53 @@ const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
   { key: "salary", label: "Salary", numeric: true },
   { key: "total", label: "Total", numeric: true },
   { key: "integrity", label: "Integrity" },
+  { key: "decision", label: "Decision" },
 ];
 
 function sortValue(c: CandidateSummary, key: SortKey): string | number {
   if (key === "total") return c.scores?.total ?? -Infinity;
   if (key === "integrity") return c.integrity.points;
   if (key === "interview" || key === "joining" || key === "salary") return c.scores?.[key].points ?? -Infinity;
+  // Undecided ranks below both outcomes, so a real decision always sorts to the top.
+  if (key === "decision") return c.decision === "selected" ? 2 : c.decision === "rejected" ? 1 : 0;
   return c[key];
+}
+
+const CSV_HEADER = [
+  "Name", "Email", "Phone", "Position", "Applied", "Status", "Decision", "Decided on", "Experience",
+  "Current CTC", "Expected CTC", "Joining", "Interview (/70)", "Joining pts", "Salary pts", "Total",
+  "Recommendation", "Interrupted", "Integrity risk", "Proctoring flags",
+];
+
+type CsvCell = string | number;
+
+function csvRow(c: CandidateSummary, joiningLabels: Record<string, string>): CsvCell[] {
+  return [
+    c.fullName, c.email, c.phone, c.jobTitle, c.createdAt.slice(0, 10), STATUS[c.status].label,
+    c.decision === "selected" ? "Selected" : c.decision === "rejected" ? "Rejected" : "",
+    c.decidedAt ? c.decidedAt.slice(0, 10) : "",
+    c.totalExperience, c.currentCTC, c.expectedCTC,
+    joiningLabels[c.joiningCategory] ?? c.joiningCategory,
+    c.scores?.interview.points ?? "", c.scores?.joining.points ?? "", c.scores?.salary.points ?? "",
+    c.scores?.total ?? "", c.scores?.recommendation ?? "", c.interrupted ? "Yes" : "No", c.integrity.level,
+    Object.values(c.integrity.counts).reduce((a, b) => a + (b ?? 0), 0),
+  ];
+}
+
+function downloadCsv(name: string, rows: CsvCell[][]) {
+  const csv = [CSV_HEADER, ...rows]
+    .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+    .join("\r\n");
+  // The leading \uFEFF is a BOM: without it Excel misreads non-ASCII names.
+  const url = URL.createObjectURL(new Blob(["\uFEFF" + csv], { type: "text/csv" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${name}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoked on the next tick: doing it inline can cancel the download mid-flight.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 interface Props {
@@ -42,6 +94,7 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
   const [tab, setTab] = useState<"candidates" | "jobs">("candidates");
   const [jobFilter, setJobFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [decisionFilter, setDecisionFilter] = useState("");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "total", dir: -1 });
   const [openId, setOpenId] = useState<string | null>(null);
@@ -51,36 +104,36 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
     return candidates
       .filter((c) => !jobFilter || c.jobId === jobFilter)
       .filter((c) => !statusFilter || c.status === statusFilter)
+      .filter((c) => !decisionFilter || c.decision === decisionFilter)
       .filter((c) => !q || `${c.fullName} ${c.email} ${c.phone}`.toLowerCase().includes(q))
       .sort((a, b) => {
         const va = sortValue(a, sort.key);
         const vb = sortValue(b, sort.key);
         return (va > vb ? 1 : va < vb ? -1 : 0) * sort.dir;
       });
-  }, [candidates, jobFilter, statusFilter, search, sort]);
+  }, [candidates, jobFilter, statusFilter, decisionFilter, search, sort]);
 
   const completed = candidates.filter((c) => c.scores);
+  const selected = candidates.filter((c) => c.decision === "selected");
+  const rejected = candidates.filter((c) => c.decision === "rejected");
   const stats = [
     { label: "Applicants", value: candidates.length },
     { label: "Interviews completed", value: completed.length },
     { label: "Hire / Strong Hire", value: completed.filter((c) => c.scores!.total >= 60).length },
+    { label: "Selected", value: selected.length, tone: "text-emerald-600" },
+    { label: "Rejected", value: rejected.length, tone: "text-red-600" },
     { label: "Open positions", value: jobs.filter((j) => j.active).length },
   ];
 
   function exportCsv() {
-    const header = ["Name", "Email", "Phone", "Position", "Applied", "Status", "Experience", "Current CTC", "Expected CTC", "Joining", "Interview (/70)", "Joining pts", "Salary pts", "Total", "Recommendation", "Interrupted", "Integrity risk", "Proctoring flags"];
-    const body = rows.map((c) => [
-      c.fullName, c.email, c.phone, c.jobTitle, c.createdAt.slice(0, 10), STATUS[c.status].label, c.totalExperience,
-      c.currentCTC, c.expectedCTC, joiningLabels[c.joiningCategory] ?? c.joiningCategory,
-      c.scores?.interview.points ?? "", c.scores?.joining.points ?? "", c.scores?.salary.points ?? "",
-      c.scores?.total ?? "", c.scores?.recommendation ?? "", c.interrupted ? "Yes" : "No", c.integrity.level,
-      Object.values(c.integrity.counts).reduce((a, b) => a + (b ?? 0), 0),
-    ]);
-    const csv = [header, ...body].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\r\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" }));
-    a.download = `candidates-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
+    downloadCsv("candidates", rows.map((c) => csvRow(c, joiningLabels)));
+  }
+
+  // Deliberately exports every candidate with that decision, not just the
+  // filtered rows on screen, so the download is the whole shortlist or reject list.
+  function exportDecision(outcome: "selected" | "rejected") {
+    const list = outcome === "selected" ? selected : rejected;
+    downloadCsv(`${outcome}-candidates`, list.map((c) => csvRow(c, joiningLabels)));
   }
 
   async function signOut() {
@@ -112,10 +165,10 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
         <JobsPanel jobs={jobs} />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
             {stats.map((s) => (
               <div key={s.label} className="rounded-xl border border-slate-200 bg-white p-4">
-                <div className="text-2xl font-bold tabular-nums">{s.value}</div>
+                <div className={cn("text-2xl font-bold tabular-nums", s.tone)}>{s.value}</div>
                 <div className="text-xs text-slate-500">{s.label}</div>
               </div>
             ))}
@@ -138,18 +191,39 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
                 </option>
               ))}
             </select>
+            <select value={decisionFilter} onChange={(e) => setDecisionFilter(e.target.value)} className={cn(inputClass, "w-auto")}>
+              <option value="">All decisions</option>
+              <option value="selected">Selected</option>
+              <option value="rejected">Rejected</option>
+            </select>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search name / email / phone"
               className={cn(inputClass, "w-64")}
             />
-            <div className="ml-auto flex gap-2">
+            <div className="ml-auto flex flex-wrap justify-end gap-2">
               <Button variant="secondary" onClick={() => router.refresh()}>
                 Refresh
               </Button>
               <Button variant="secondary" onClick={exportCsv}>
                 Export CSV
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => exportDecision("selected")}
+                disabled={!selected.length}
+                title="CSV of every selected candidate, ignoring the filters above"
+              >
+                Download selected ({selected.length})
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => exportDecision("rejected")}
+                disabled={!rejected.length}
+                title="CSV of every rejected candidate, ignoring the filters above"
+              >
+                Download rejected ({rejected.length})
               </Button>
             </div>
           </div>
@@ -177,8 +251,8 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
                   return (
                     <tr key={c.id} onClick={() => setOpenId(c.id)} className="cursor-pointer hover:bg-brand-50/60">
                       <td className="px-3 py-2.5">
-                        <div className="font-semibold">{c.fullName}</div>
-                        <div className="text-xs text-slate-500">{c.email}</div>
+                        <div className="font-semibold">{c.fullName || "Resume submitted"}</div>
+                        <div className="text-xs text-slate-500">{c.email || "Details not submitted"}</div>
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">{c.jobTitle}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap">{new Date(c.createdAt).toLocaleDateString()}</td>
@@ -193,9 +267,9 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{c.totalExperience}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{c.profileComplete ? c.totalExperience : "–"}</td>
                       <td className="px-3 py-2.5 text-right whitespace-nowrap tabular-nums">
-                        {c.currentCTC} → {c.expectedCTC}
+                        {c.profileComplete ? `${c.currentCTC} → ${c.expectedCTC}` : "–"}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{s ? s.interview.points : "–"}</td>
                       <td className="px-3 py-2.5 text-right">{s ? <Signed value={s.joining.points} /> : "–"}</td>
@@ -203,6 +277,9 @@ export function Dashboard({ candidates, jobs, joiningLabels }: Props) {
                       <td className="px-3 py-2.5 text-right text-base">{s ? <Signed value={s.total} /> : "–"}</td>
                       <td className="px-3 py-2.5">
                         <IntegrityPill level={c.integrity.level} />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {c.decision ? <DecisionPill outcome={c.decision} /> : <span className="text-slate-400">–</span>}
                       </td>
                       <td className="px-3 py-2.5">{s && <RecommendationPill label={s.recommendation} />}</td>
                     </tr>

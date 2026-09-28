@@ -1,10 +1,9 @@
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { assertActiveSession } from "@/lib/candidates";
 import { config } from "@/lib/config";
 import { handler, HttpError } from "@/lib/http";
-import { mediaDir, store } from "@/lib/store";
+import { appendScreenChunk } from "@/lib/object-storage";
+import { store } from "@/lib/store";
 
 /**
  * Receives the screen recording in ~10 s chunks while the interview runs, appending each to its
@@ -24,9 +23,6 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
   }
   if (chunk.size > config.maxScreenChunkBytes) throw new HttpError(400, "Screen chunk too large.");
   const data = Buffer.from(await chunk.arrayBuffer());
-  const dir = mediaDir(id);
-  await fs.mkdir(dir, { recursive: true });
-
   let duplicate = false;
   const updated = await store.updateCandidate(id, async (c) => {
     assertActiveSession(c, sessionId);
@@ -37,6 +33,7 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
         startedAt: new Date().toISOString(),
         chunks: 0,
         bytes: 0,
+        chunkSizes: [],
       });
     }
     const seg = segments[segment];
@@ -46,10 +43,10 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
       return;
     }
     if (seq > seg.chunks) throw new HttpError(409, "Screen chunk out of order.");
-    // Appended under the store lock, so chunks can never interleave.
-    await fs.appendFile(path.join(/*turbopackIgnore: true*/ dir, seg.file), data);
+    await appendScreenChunk(id, seg.file, seq, data);
     seg.chunks += 1;
     seg.bytes += data.length;
+    (seg.chunkSizes ??= []).push(data.length);
   });
   if (!updated) throw new HttpError(404, "Interview not found.");
   return Response.json({ ok: true, duplicate });

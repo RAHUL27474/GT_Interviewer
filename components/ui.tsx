@@ -114,3 +114,62 @@ export function Spinner({ className }: { className?: string }) {
     />
   );
 }
+
+/* ------------------------------------------------------- Pre-interview flow */
+
+/**
+ * The 1/3 · 2/3 · 3/3 indicator across the steps between a shortlist and the
+ * interview starting.
+ *
+ * The labels are the point, not the numbers. A candidate three clicks from the
+ * hardest part of the process is much better served by knowing the steps are
+ * nearly done than by a percentage.
+ */
+export function StepProgress({ steps, current }: { steps: readonly { n: number; label: string }[]; current: number }) {
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between text-xs font-semibold">
+        <span className="text-slate-500">
+          Step {current} of {steps.length}
+        </span>
+        <span className="text-brand-700">{steps.find((s) => s.n === current)?.label}</span>
+      </div>
+      <div className="mt-2 flex gap-1.5" aria-hidden="true">
+        {steps.map((s) => (
+          <span
+            key={s.n}
+            className={cn(
+              "h-1.5 flex-1 rounded-full transition-colors",
+              s.n < current ? "bg-brand-100" : s.n === current ? "bg-brand-600" : "bg-slate-200",
+            )}
+          />
+        ))}
+      </div>
+      {/* Announced rather than shown, so a screen reader hears the same progress. */}
+      <p className="sr-only" role="status">
+        Step {current} of {steps.length}: {steps.find((s) => s.n === current)?.label}
+      </p>
+    </div>
+  );
+}
+
+/** A focus area, as a pill. Used on the invitation and the brief. */
+export function TopicPill({ children }: { children: ReactNode }) {
+  return (
+    <li className="rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-sm leading-snug font-medium text-brand-700">
+      {children}
+    </li>
+  );
+}
+
+/** A tick-list item for the "before you begin" and device-check screens. */
+export function Bullet({ children }: { children: ReactNode }) {
+  return (
+    <li className="flex gap-2.5">
+      <span className="mt-0.5 shrink-0 text-brand-500" aria-hidden="true">
+        ✓
+      </span>
+      <span>{children}</span>
+    </li>
+  );
+}

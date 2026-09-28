@@ -1,10 +1,11 @@
-import { createReadStream } from "node:fs";
-import fs from "node:fs/promises";
-import path from "node:path";
-import { Readable } from "node:stream";
 import { requireAdmin } from "@/lib/auth";
 import { handler, HttpError } from "@/lib/http";
-import { mediaDir, store } from "@/lib/store";
+import {
+  openScreenRecording,
+  openStoredObject,
+  storedObjectSize,
+} from "@/lib/object-storage";
+import { store } from "@/lib/store";
 
 const MIME: Record<string, string> = { ".webm": "video/webm", ".mp4": "video/mp4", ".jpg": "image/jpeg" };
 
@@ -20,9 +21,17 @@ export const GET = handler(async (request: Request, ctx: { params: Promise<{ id:
     c?.screenRecording?.segments.some((s) => s.file === file);
   if (!c || !known) throw new HttpError(404, "File not found.");
 
-  const filePath = path.join(mediaDir(id), file);
-  const { size } = await fs.stat(filePath);
-  const type = MIME[path.extname(file)] ?? "application/octet-stream";
+  const segment = c.screenRecording?.segments.find((item) => item.file === file);
+  const chunked = Boolean(
+    segment?.chunkSizes?.length && segment.chunkSizes.length === segment.chunks,
+  );
+  const size = chunked ? segment!.bytes : await storedObjectSize(`videos/${id}/${file}`);
+  const type = MIME[file.slice(file.lastIndexOf("."))] ?? "application/octet-stream";
+
+  const stream = (start?: number, end?: number) =>
+    chunked
+      ? openScreenRecording(id, file, segment!.chunkSizes!, start ?? 0, end ?? size - 1)
+      : openStoredObject(`videos/${id}/${file}`, start === undefined || end === undefined ? undefined : { start, end });
 
   const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get("range") ?? "");
   if (range && (range[1] || range[2])) {
@@ -31,8 +40,7 @@ export const GET = handler(async (request: Request, ctx: { params: Promise<{ id:
     if (start >= size || start > end) {
       return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
     }
-    const stream = Readable.toWeb(createReadStream(filePath, { start, end })) as ReadableStream;
-    return new Response(stream, {
+    return new Response(await stream(start, end), {
       status: 206,
       headers: {
         "Content-Type": type,
@@ -43,8 +51,7 @@ export const GET = handler(async (request: Request, ctx: { params: Promise<{ id:
     });
   }
 
-  const stream = Readable.toWeb(createReadStream(filePath)) as ReadableStream;
-  return new Response(stream, {
+  return new Response(await stream(), {
     headers: { "Content-Type": type, "Content-Length": String(size), "Accept-Ranges": "bytes" },
   });
 });

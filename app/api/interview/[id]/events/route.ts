@@ -1,11 +1,10 @@
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { assertActiveSession } from "@/lib/candidates";
 import { config } from "@/lib/config";
 import { handler, HttpError } from "@/lib/http";
 import { PROCTOR_EVENT_TYPES } from "@/lib/proctoring";
-import { mediaDir, store } from "@/lib/store";
+import { writeStoredObject } from "@/lib/object-storage";
+import { store } from "@/lib/store";
 import type { ProctorEventType } from "@/lib/types";
 
 /** Records one live proctoring event (with an optional webcam snapshot) as it happens. */
@@ -24,10 +23,8 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
   let snapshot: string | null = null;
   const snap = form.get("snapshot");
   if (snap instanceof File && snap.type === "image/jpeg" && snap.size > 0 && snap.size <= config.maxSnapshotBytes) {
-    const dir = mediaDir(id);
-    await fs.mkdir(dir, { recursive: true });
     snapshot = `event-${Date.now()}-${crypto.randomBytes(3).toString("hex")}.jpg`;
-    await fs.writeFile(path.join(/*turbopackIgnore: true*/ dir, snapshot), Buffer.from(await snap.arrayBuffer()));
+    await writeStoredObject(`videos/${id}/${snapshot}`, Buffer.from(await snap.arrayBuffer()));
   }
 
   const q = form.get("questionIndex");

@@ -1,11 +1,10 @@
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { after } from "next/server";
 import { assertActiveSession, interviewState, runEvaluation } from "@/lib/candidates";
 import { config } from "@/lib/config";
 import { handler, HttpError } from "@/lib/http";
-import { mediaDir, store } from "@/lib/store";
+import { deleteStoredObject, writeStoredObject } from "@/lib/object-storage";
+import { store } from "@/lib/store";
 
 export const maxDuration = 300;
 
@@ -26,8 +25,6 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
 
   const video = form.get("video");
   const snapshots = form.getAll("snapshots").slice(0, config.snapshotsPerAnswer);
-  const dir = mediaDir(id);
-  await fs.mkdir(dir, { recursive: true });
   // Random suffix so a duplicate submission can never overwrite a saved answer's files.
   const base = `${index}-${crypto.randomBytes(4).toString("hex")}`;
   const written: string[] = [];
@@ -39,16 +36,16 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
       if (!ext) throw new HttpError(400, "Unsupported video format.");
       if (video.size > config.maxVideoBytes) throw new HttpError(400, "Video is too large.");
       videoName = base + ext;
-      await fs.writeFile(path.join(/*turbopackIgnore: true*/ dir, videoName), Buffer.from(await video.arrayBuffer()));
-      written.push(videoName);
+      await writeStoredObject(`videos/${id}/${videoName}`, Buffer.from(await video.arrayBuffer()));
+      written.push(`videos/${id}/${videoName}`);
     }
 
     const snapshotNames: string[] = [];
     for (const [n, snap] of snapshots.entries()) {
       if (!(snap instanceof File) || snap.type !== "image/jpeg" || snap.size > config.maxSnapshotBytes) continue;
       const name = `${base}-snap${n}.jpg`;
-      await fs.writeFile(path.join(/*turbopackIgnore: true*/ dir, name), Buffer.from(await snap.arrayBuffer()));
-      written.push(name);
+      await writeStoredObject(`videos/${id}/${name}`, Buffer.from(await snap.arrayBuffer()));
+      written.push(`videos/${id}/${name}`);
       snapshotNames.push(name);
     }
 
@@ -76,7 +73,7 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
     if (finished) after(() => runEvaluation(id));
     return Response.json(interviewState(updated));
   } catch (err) {
-    await Promise.all(written.map((name) => fs.rm(path.join(/*turbopackIgnore: true*/ dir, name), { force: true })));
+    await Promise.all(written.map((key) => deleteStoredObject(key)));
     throw err;
   }
 });

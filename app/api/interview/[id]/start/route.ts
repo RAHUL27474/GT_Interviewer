@@ -19,7 +19,7 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
   const sessionId = newSessionId();
 
   const updated = await store.updateCandidate(id, (c) => {
-    if (c.status !== "ready") throw new HttpError(409, "This interview has already been started.");
+    if (c.status !== "ready" || !c.profileComplete) throw new HttpError(409, "This interview has already been started.");
     const now = new Date().toISOString();
     c.status = "in_progress";
     c.sessionId = sessionId;

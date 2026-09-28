@@ -1,8 +1,11 @@
 import { INTEGRITY_LABEL } from "@/lib/proctoring";
-import type { CandidateStatus, IntegritySummary } from "@/lib/types";
+import type { CandidateStatus, HrDecision, IntegritySummary } from "@/lib/types";
 import { cn, Pill, type Tone } from "../ui";
 
 export const STATUS: Record<CandidateStatus, { label: string; tone: Tone }> = {
+  awaiting_screening: { label: "Resume review", tone: "warn" },
+  screening: { label: "Screening resume", tone: "neutral" },
+  profile_pending: { label: "Details pending", tone: "warn" },
   ready: { label: "Not started", tone: "neutral" },
   in_progress: { label: "In progress", tone: "warn" },
   evaluating: { label: "Evaluating…", tone: "neutral" },
@@ -20,6 +23,13 @@ const INTEGRITY_TONE: Record<IntegritySummary["level"], Tone> = { low: "good", m
 
 export function IntegrityPill({ level }: { level: IntegritySummary["level"] }) {
   return <Pill tone={INTEGRITY_TONE[level]}>{INTEGRITY_LABEL[level]}</Pill>;
+}
+
+/** HR's own decision, so it reads as a verdict rather than an AI suggestion. */
+const DECISION_TONE: Record<HrDecision, Tone> = { selected: "good", rejected: "bad" };
+
+export function DecisionPill({ outcome }: { outcome: HrDecision }) {
+  return <Pill tone={DECISION_TONE[outcome]}>{outcome === "selected" ? "Selected" : "Rejected"}</Pill>;
 }
 
 /** Number with a sign and green/red colour: +15, −5, 0. */

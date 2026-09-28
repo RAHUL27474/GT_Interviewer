@@ -35,8 +35,8 @@ export default async function AdminPage() {
       <main className="mx-auto max-w-7xl space-y-4 px-4 pt-6 pb-16">
         {signedIn && config.aiProvider !== "claude" && (
           <Alert tone="info">
-            AI: <strong>{AI_PROVIDER_LABEL[config.aiProvider]}</strong>. Set ANTHROPIC_API_KEY in .env before launch to
-            use Claude.
+            AI: <strong>{AI_PROVIDER_LABEL[config.aiProvider]}</strong>.{" "}
+            {config.aiProvider === "mock" ? "Set GROQ_API_KEY in .env to enable live interviews." : "Provider is active."}
           </Alert>
         )}
         {body}

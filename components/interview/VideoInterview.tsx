@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { InterviewState, ProctorEventType } from "@/lib/types";
-import { Alert, Button, Card, cn } from "../ui";
+import { PRE_INTERVIEW_STEPS } from "@/lib/invite";
+import { Alert, Button, Card, cn, inputClass, Spinner, StepProgress } from "../ui";
 import {
   AnswerRecorder,
   captureFrame,
@@ -26,6 +27,7 @@ const LIVE: Phase[] = ["asking", "prep", "recording", "uploading"];
 const SNAPSHOT_AT = [3, 30, 90];
 /** Stops accidental instant submits. */
 const MIN_ANSWER_SECONDS = 5;
+const VOICE_CLIENT_TIMEOUT_MS = 5_000;
 const HEARTBEAT_MS = 10_000;
 
 export function VideoInterview({ id, initialState }: { id: string; initialState: InterviewState }) {
@@ -49,6 +51,9 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
   const recorder = useRef(new AnswerRecorder());
   const snapshots = useRef<Blob[]>([]);
   const sessionId = useRef<string | null>(null);
+  const voiceConversationId = useRef<string | null>(null);
+  const voiceRequestGeneration = useRef(0);
+  const pendingVoiceReply = useRef<string | null>(null);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
   const finishing = useRef(false);
@@ -100,8 +105,17 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
     transcript.stop();
     screen.stop();
     camera.release();
+    if (sessionId.current) {
+      void fetch(`${api}/voice`, {
+        method: "DELETE",
+        headers: { "x-interview-session-id": sessionId.current },
+      }).catch(() => {});
+    }
+    voiceRequestGeneration.current += 1;
+    voiceConversationId.current = null;
+    pendingVoiceReply.current = null;
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  }, [proctor, transcript, camera, screen]);
+  }, [api, proctor, transcript, camera, screen]);
 
   /** Server says the interview is no longer live (auto-submitted after an interruption). */
   const handleInterrupted = useCallback(async () => {
@@ -258,11 +272,78 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
     setPhase("recording");
   }
 
+  async function requestVoiceReply(transcript: string, questionIndex: number): Promise<string | null> {
+    const activeSessionId = sessionId.current;
+    if (!activeSessionId || !transcript.trim()) return null;
+    const requestGeneration = ++voiceRequestGeneration.current;
+    const requestedConversationId = voiceConversationId.current;
+    const request = (async (): Promise<string | null> => {
+      try {
+        const response = await fetch(`${api}/voice`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-interview-session-id": activeSessionId,
+          },
+          body: JSON.stringify({
+            conversation_id: requestedConversationId ?? undefined,
+            question_index: questionIndex,
+            transcript,
+            response_audio: false,
+          }),
+        });
+        if (response.status === 409) {
+          // A stale request must not clear a newer turn's server binding.
+          if (
+            sessionId.current === activeSessionId
+            && voiceRequestGeneration.current === requestGeneration
+            && voiceConversationId.current === requestedConversationId
+          ) {
+            voiceConversationId.current = null;
+          }
+          return null;
+        }
+        if (!response.ok) return null;
+        const payload = (await response.json()) as {
+          conversation_id?: unknown;
+          turn?: { output_text?: unknown };
+        };
+        if (
+          sessionId.current === activeSessionId
+          && voiceRequestGeneration.current === requestGeneration
+          && typeof payload.conversation_id === "string"
+        ) {
+          voiceConversationId.current = payload.conversation_id;
+        }
+        return typeof payload.turn?.output_text === "string" ? payload.turn.output_text.trim() || null : null;
+      } catch {
+        // The existing answer upload and browser speech fallback remain usable if
+        // the optional gateway is unavailable.
+        return null;
+      }
+    })();
+    let timer: number | undefined;
+    const timeout = new Promise<null>((resolve) => {
+      timer = window.setTimeout(() => resolve(null), VOICE_CLIENT_TIMEOUT_MS);
+    });
+    try {
+      // Do not abort the server request: if it finishes after the browser's
+      // fallback timeout, the BFF can still bind the server-managed session for
+      // the next turn.
+      return await Promise.race([request, timeout]);
+    } finally {
+      if (timer !== undefined) window.clearTimeout(timer);
+    }
+  }
+
   async function finishAnswer() {
     if (finishing.current || !q) return;
     finishing.current = true;
     const [video, text] = await Promise.all([recorder.current.stop(), transcript.stop()]);
+    setPhase("uploading");
+    setProgress(0);
     if (q.index + 1 === state.total) await screen.stop();
+    pendingVoiceReply.current = await requestVoiceReply(text, q.index);
 
     const form = new FormData();
     form.set("sessionId", sessionId.current ?? "");
@@ -284,9 +365,13 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
       if (res.status === 409) return handleInterrupted();
       if (!res.ok) throw new Error(String(res.data.error || "Could not save your answer."));
       const next = res.data as unknown as InterviewState;
+      const voiceReply = pendingVoiceReply.current;
+      pendingVoiceReply.current = null;
       setState(next);
-      if (next.nextQuestion) askQuestion(next.nextQuestion.text);
-      else setPhase("done");
+      if (next.nextQuestion) {
+        const spokenQuestion = voiceReply ? `${voiceReply}\n\n${next.nextQuestion.text}` : next.nextQuestion.text;
+        askQuestion(spokenQuestion);
+      } else setPhase("done");
     } catch (err) {
       setPendingForm(form);
       setError(`${err instanceof Error ? err.message : err} Check your internet connection and try again.`);
@@ -360,7 +445,38 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
     <div className="space-y-4">
       {error && <Alert>{error}</Alert>}
 
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+      {/*
+        The device check is step 3 of 3, so it gets its own full-width layout
+        rather than a column beside a preview. It is a screen in its own right
+        and it is the last thing standing between someone and a recorded
+        interview, which is the worst possible moment to make it feel like a
+        sidebar.
+      */}
+      {phase === "setup" ? (
+        <DeviceCheck
+          state={state}
+          browserOk={browserOk}
+          camera={camera}
+          videoEl={videoEl}
+          proctorStatus={proctor.status}
+          faceCount={proctor.faceCount}
+          secondScreen={secondScreen}
+          screenShared={Boolean(screen.stream)}
+          screenError={screen.error}
+          isFullscreen={proctor.isFullscreen}
+          onShareScreen={screen.share}
+          onFullscreen={async () => {
+            setError("");
+            if (!(await enterFullscreen())) {
+              setError(
+                "Your browser didn't allow fullscreen. Click \"Enter fullscreen\" again, and if a prompt appears, allow it. The interview can't start without fullscreen.",
+              );
+            }
+          }}
+          onStart={startInterview}
+        />
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         {/* Camera */}
         <div className="relative aspect-video overflow-hidden rounded-xl bg-slate-900">
           {camera.stream ? (
@@ -395,45 +511,11 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
               )}
             </>
           )}
-          {phase === "setup" && camera.stream && (
-            <div className="absolute inset-x-3 bottom-3 flex items-center gap-2 rounded-md bg-black/60 px-3 py-2 text-xs text-white">
-              🎤
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/20">
-                <div className="h-full bg-emerald-400 transition-[width] duration-75" style={{ width: `${camera.micLevel * 100}%` }} />
-              </div>
-              <span>Say something to test your mic</span>
-            </div>
-          )}
         </div>
 
         {/* Panel */}
         <Card className="flex flex-col">
-          {phase === "setup" ? (
-            <SetupPanel
-              state={state}
-              browserOk={browserOk}
-              cameraOn={Boolean(camera.stream)}
-              cameraError={camera.error}
-              proctorStatus={proctor.status}
-              faceCount={proctor.faceCount}
-              secondScreen={secondScreen}
-              screenShared={Boolean(screen.stream)}
-              screenError={screen.error}
-              isFullscreen={proctor.isFullscreen}
-              onEnable={camera.enable}
-              onShareScreen={screen.share}
-              onFullscreen={async () => {
-                setError("");
-                if (!(await enterFullscreen())) {
-                  setError(
-                    "Your browser didn't allow fullscreen. Click \"Enter fullscreen\" again, and if a prompt appears, allow it. The interview can't start without fullscreen.",
-                  );
-                }
-              }}
-              onStart={startInterview}
-            />
-          ) : (
-            <>
+          <>
               <div className="flex items-center justify-between text-sm text-slate-500">
                 <span>
                   Question {q ? q.index + 1 : state.total} of {state.total}
@@ -515,9 +597,9 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
                 </p>
               </div>
             </>
-          )}
         </Card>
-      </div>
+        </div>
+      )}
 
       {/* Fullscreen is required while the interview is live; recording continues behind this. */}
       {live && !screen.stream && (
@@ -616,127 +698,234 @@ function Check({ ok, pending, children }: { ok: boolean; pending?: boolean; chil
   );
 }
 
-function SetupPanel({
+/**
+ * Step 3 of 3: the device check.
+ *
+ * Replaces the old setup panel, which was a checklist in a sidebar next to the
+ * camera preview. This is a screen, because that is what it is: the last thing
+ * between a candidate and a recorded interview, and the moment where someone
+ * finds out their laptop has no microphone or their browser will not hand over
+ * the screen. Both are much better found here than two questions into a
+ * recording.
+ *
+ * The gating itself is unchanged and still hard: `startInterview` re-checks the
+ * screen stream and fullscreen itself, so nothing here is load-bearing for
+ * correctness. This is about the candidate being able to see what is left.
+ */
+function DeviceCheck({
   state,
   browserOk,
-  cameraOn,
-  cameraError,
+  camera,
+  videoEl,
   proctorStatus,
   faceCount,
   secondScreen,
   screenShared,
   screenError,
   isFullscreen,
-  onEnable,
   onShareScreen,
   onFullscreen,
   onStart,
 }: {
   state: InterviewState;
   browserOk: boolean;
-  cameraOn: boolean;
-  cameraError: string;
+  camera: ReturnType<typeof useCamera>;
+  videoEl: React.RefObject<HTMLVideoElement | null>;
   proctorStatus: "loading" | "ready" | "unavailable";
   faceCount: number | null;
   secondScreen: boolean;
   screenShared: boolean;
   screenError: string;
   isFullscreen: boolean;
-  onEnable: () => void;
   onShareScreen: () => void;
   onFullscreen: () => void;
   onStart: () => void;
 }) {
   if (!browserOk) {
     return (
-      <div className="space-y-3">
-        <h1 className="text-xl font-bold">Please switch browser</h1>
-        <p className="text-sm text-slate-600">
-          This video interview needs <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong> on a laptop or
-          desktop. Copy this page&apos;s link and open it there.
+      <div className="mx-auto max-w-lg py-10 text-center">
+        <StepProgress steps={PRE_INTERVIEW_STEPS} current={3} />
+        <h1 className="text-2xl font-bold">Please switch browser</h1>
+        <p className="mt-2 text-slate-600">
+          This interview needs <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong> on a laptop or
+          desktop. Copy this page&apos;s link and open it there, and you&apos;ll come straight back to this step.
         </p>
-        <Button variant="secondary" onClick={() => navigator.clipboard.writeText(window.location.href)}>
-          Copy interview link
-        </Button>
+        <div className="mt-6">
+          <Button variant="secondary" onClick={() => navigator.clipboard.writeText(window.location.href)}>
+            Copy interview link
+          </Button>
+        </div>
       </div>
     );
   }
 
+  const cameraOn = Boolean(camera.stream);
   const faceOk = faceCount === 1;
-  // Camera checks are best-effort: if the models can't load, the interview still runs (and HR is told).
-  const cameraReady = cameraOn && proctorStatus !== "loading" && (faceOk || proctorStatus === "unavailable");
+  // Face checks are best-effort. If the models can't load, the interview still
+  // runs and HR is told the checks were unavailable, rather than the candidate
+  // being stuck at a spinner they cannot influence.
+  const faceCleared = proctorStatus === "unavailable" || faceOk;
+  const facePending = proctorStatus === "loading" || faceCount === null;
 
-  // Setup is a fixed sequence: camera -> entire screen -> fullscreen -> start.
-  const step = !cameraOn ? 1 : !cameraReady ? 1 : !screenShared ? 2 : !isFullscreen ? 3 : 4;
+  // A fixed order, so the candidate always knows what is next: camera and mic,
+  // then the whole screen, then fullscreen, then start.
+  const step = !cameraOn ? 1 : !faceCleared ? 1 : !screenShared ? 2 : !isFullscreen ? 3 : 4;
   const action = !cameraOn
-    ? { label: "Step 1: Turn on camera & microphone", onClick: onEnable, disabled: false }
+    ? { label: "Turn on camera & microphone", onClick: camera.enable, disabled: false }
     : step === 1
-      ? { label: "Waiting for face check…", onClick: () => {}, disabled: true }
+      ? { label: "Waiting for the face check…", onClick: () => {}, disabled: true }
       : step === 2
-        ? { label: "Step 2: Share your entire screen", onClick: onShareScreen, disabled: false }
+        ? { label: "Share your entire screen", onClick: onShareScreen, disabled: false }
         : step === 3
-          ? { label: "Step 3: Enter fullscreen", onClick: onFullscreen, disabled: false }
+          ? { label: "Enter fullscreen", onClick: onFullscreen, disabled: false }
           : { label: "Start interview", onClick: onStart, disabled: false };
 
   return (
-    <div className="flex h-full flex-col">
-      <h1 className="text-xl font-bold">Hi {state.fullName.split(" ")[0]} 👋</h1>
-      <p className="mt-1 text-sm text-slate-500">
-        Video interview for <strong className="text-slate-800">{state.jobTitle}</strong>
+    <div className="mx-auto max-w-3xl">
+      <StepProgress steps={PRE_INTERVIEW_STEPS} current={3} />
+
+      <h1 className="text-2xl font-bold tracking-tight">
+        Hi {state.fullName.split(" ")[0]}, let&apos;s check your setup
+      </h1>
+      <p className="mt-1 mb-6 text-slate-600">
+        Three quick checks for the <strong className="text-slate-900">{state.jobTitle}</strong> interview, then you&apos;re
+        straight in. Nothing here is recorded.
       </p>
-      <ul className="mt-4 list-disc space-y-1.5 pl-5 text-sm text-slate-700">
-        <li>
-          {state.total} questions. Each is read aloud, then you get {state.prepSeconds}s to think and up to{" "}
-          {state.minutesPerQuestion} min to answer on camera. No retakes.
-        </li>
-        <li>
-          Your camera and <strong>entire screen are recorded</strong>, and the interview runs in fullscreen. Your face must
-          stay visible; typing, phones and other people are flagged.
-        </li>
-        <li>
-          <strong>Stay on this tab, in fullscreen.</strong> Leaving gives you a warning ({state.maxWarnings} allowed). Leaving
-          again, or staying away more than {state.awayGraceSeconds} seconds, submits your interview.
-        </li>
-        <li>
-          <strong>Complete it in one sitting.</strong> If you close or refresh the page, or lose connection, the interview
-          is submitted as it is and you&apos;ll need to contact HR for a re-interview.
-        </li>
-      </ul>
 
-      <ul className="mt-4 space-y-1 rounded-lg bg-slate-50 p-3 text-sm">
-        <Check ok={cameraOn} pending={!cameraOn}>Camera and microphone on</Check>
-        {cameraOn &&
-          (proctorStatus === "unavailable" ? (
-            <Check ok={false}>Face checks couldn&apos;t load on this device (you can still continue)</Check>
-          ) : (
-            <Check ok={faceOk} pending={proctorStatus === "loading" || faceCount === null}>
-              {proctorStatus === "loading"
-                ? "Loading face check…"
-                : faceCount === null
-                  ? "Checking for your face…"
-                  : faceCount === 0
-                    ? "No face detected: sit facing the camera in good light"
-                    : faceCount > 1
-                      ? "More than one person detected: you must be alone"
-                      : "Face detected"}
-            </Check>
-          ))}
-        <Check ok={screenShared} pending={!screenShared}>
-          Entire screen shared{!screenShared && step === 2 && <span className="text-slate-500"> (choose &quot;Entire screen&quot;)</span>}
-        </Check>
-        <Check ok={isFullscreen} pending={!isFullscreen}>Fullscreen on</Check>
-        {secondScreen && <Check ok={false}>Second monitor detected: please disconnect it (this is recorded)</Check>}
-      </ul>
+      {/* Live preview. Kept large: it is the only way to tell whether the framing
+          is right, and a thumbnail cannot show that. */}
+      <div className="relative aspect-video overflow-hidden rounded-xl bg-slate-900">
+        {camera.stream ? (
+          <video ref={videoEl} autoPlay muted playsInline className="size-full -scale-x-100 object-cover" />
+        ) : (
+          <div className="grid size-full place-items-center p-6 text-center">
+            <div>
+              <p className="text-sm font-medium text-slate-300">Your camera preview will appear here</p>
+              <p className="mt-1 text-xs text-slate-500">Look straight at the camera, in good light</p>
+            </div>
+          </div>
+        )}
 
-      {(cameraError || screenError) && (
-        <div className="mt-4">
-          <Alert>{cameraError || screenError}</Alert>
+        {camera.stream && (
+          <div className="absolute inset-x-3 bottom-3 flex items-center gap-2.5 rounded-lg bg-black/60 px-3 py-2 text-xs text-white">
+            <span aria-hidden="true">🎤</span>
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/25">
+              <div
+                className="h-full rounded-full bg-emerald-400 transition-[width] duration-75"
+                style={{ width: `${Math.max(3, camera.micLevel * 100)}%` }}
+              />
+            </div>
+            <span className="shrink-0">{camera.micLevel > 0.02 ? "We can hear you" : "Say a few words to test your mic"}</span>
+          </div>
+        )}
+
+        {/* The friendly loader the spec asks for, over the preview so it reads as
+            "we're looking at you" rather than as an error. */}
+        {camera.stream && facePending && (
+          <div className="absolute inset-0 grid place-items-center bg-slate-900/70 p-6 text-center">
+            <div>
+              <Spinner className="mx-auto size-8 border-slate-600 border-t-white" />
+              <p className="mt-3 text-sm font-medium text-white">Please wait — we&apos;re detecting your face…</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Device pickers, only once there is more than one to pick. */}
+      {cameraOn && (camera.cameras.length > 1 || camera.microphones.length > 1) && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {camera.cameras.length > 1 && (
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-medium text-slate-700">Camera</span>
+              <select
+                value={camera.cameraId}
+                onChange={(e) => camera.useDevice("camera", e.target.value)}
+                className={cn(inputClass, "py-2")}
+              >
+                {camera.cameras.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {camera.microphones.length > 1 && (
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-medium text-slate-700">Microphone</span>
+              <select
+                value={camera.micId}
+                onChange={(e) => camera.useDevice("mic", e.target.value)}
+                className={cn(inputClass, "py-2")}
+              >
+                {camera.microphones.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
       )}
-      <div className="mt-auto pt-6">
-        <Button onClick={action.onClick} disabled={action.disabled} className="w-full py-2.5">
+
+      <Card className="mt-5">
+        <ul className="space-y-2.5 text-sm">
+          <Check ok={cameraOn} pending={!cameraOn}>
+            Camera and microphone on
+          </Check>
+          {cameraOn &&
+            (proctorStatus === "unavailable" ? (
+              <Check ok={false}>Face check unavailable on this device — you can still continue</Check>
+            ) : (
+              <Check ok={faceOk} pending={facePending}>
+                {facePending
+                  ? "Looking for your face…"
+                  : faceCount === 0
+                    ? "No face found — sit facing the camera in better light"
+                    : faceCount > 1
+                      ? "More than one person found — you need to be alone for this"
+                      : "Face found"}
+              </Check>
+            ))}
+          <Check ok={screenShared} pending={!screenShared}>
+            Entire screen shared
+            {!screenShared && step === 2 && <span className="text-slate-500"> — choose &quot;Entire screen&quot;</span>}
+          </Check>
+          <Check ok={isFullscreen} pending={!isFullscreen}>
+            Fullscreen on
+          </Check>
+          {secondScreen && <Check ok={false}>Second monitor detected — please disconnect it. This is recorded.</Check>}
+        </ul>
+      </Card>
+
+      {(camera.error || screenError) && (
+        <div className="mt-4">
+          <Alert>{camera.error || screenError}</Alert>
+        </div>
+      )}
+
+      <ul className="mt-4 list-disc space-y-1.5 pl-5 text-sm text-slate-600">
+        <li>
+          {state.total} questions, each read aloud, then {state.prepSeconds}s to think and up to{" "}
+          {state.minutesPerQuestion} min to answer on camera.
+        </li>
+        <li>
+          Your camera, microphone and <strong>entire screen are recorded</strong>, and the interview runs in fullscreen.
+        </li>
+        <li>
+          <strong>Stay on this tab, in fullscreen.</strong> You get {state.maxWarnings} warnings; leaving again, or
+          staying away over {state.awayGraceSeconds}s, submits your interview.
+        </li>
+      </ul>
+
+      <div className="mt-6 flex flex-col items-center gap-3">
+        <Button onClick={action.onClick} disabled={action.disabled} className="w-full px-8 py-3 text-base sm:w-auto">
           {action.label}
         </Button>
+        <p className="text-xs text-slate-400">
+          Don&apos;t close or refresh once the interview starts. If it&apos;s interrupted, it&apos;s submitted as it is.
+        </p>
       </div>
     </div>
   );

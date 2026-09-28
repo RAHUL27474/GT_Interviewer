@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { Candidate } from "@/lib/types";
+import type { Candidate, HrDecision, NotificationEvent } from "@/lib/types";
 import { Alert, Button, Pill } from "../ui";
 import { computeIntegrity, PROCTOR_EVENTS } from "@/lib/proctoring";
-import { IntegrityPill, RecommendationPill, Signed, STATUS } from "./shared";
+import { DecisionPill, IntegrityPill, RecommendationPill, Signed, STATUS } from "./shared";
+import { ResumeScreeningPanel } from "./ResumeScreeningPanel";
 
 interface Props {
   id: string;
@@ -13,9 +14,18 @@ interface Props {
   onChanged: () => void;
 }
 
+/** What each notification means to a reviewer, in plain language. */
+const NOTIFICATION_LABEL: Record<NotificationEvent, string> = {
+  application_received: "Acknowledgement sent",
+  interview_ready: "Interview link sent",
+  awaiting_hr_review: "HR review alert sent",
+};
+
 export function CandidateDrawer({ id, joiningLabels, onClose, onChanged }: Props) {
   const [c, setC] = useState<Candidate | null>(null);
   const [error, setError] = useState("");
+  const [screeningBusy, setScreeningBusy] = useState(false);
+  const [decisionBusy, setDecisionBusy] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/admin/candidates/${encodeURIComponent(id)}`);
@@ -32,7 +42,7 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged }: Props
 
   // Poll while the AI is grading.
   useEffect(() => {
-    if (c?.status !== "evaluating") return;
+    if (c?.status !== "evaluating" && c?.status !== "screening") return;
     const t = setInterval(async () => {
       await load();
     }, 4000);
@@ -42,7 +52,7 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged }: Props
   // Refresh the table once grading finishes (onChanged is intentionally not a dependency).
   const status = c?.status;
   useEffect(() => {
-    if (status === "completed" || status === "evaluation_failed") onChanged();
+    if (status === "completed" || status === "evaluation_failed" || status === "ready" || status === "awaiting_screening" || status === "profile_pending") onChanged();
   }, [status]);
 
   useEffect(() => {
@@ -68,6 +78,47 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged }: Props
     else load();
   }
 
+  async function approveResume() {
+    setScreeningBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/candidates/${encodeURIComponent(id)}/screen`, { method: "POST" });
+      if (!res.ok) {
+        setError((await res.json().catch(() => ({}))).error || "Could not approve this resume.");
+        return;
+      }
+      await load();
+      onChanged();
+    } catch {
+      setError("Could not reach the server. Please try again.");
+    } finally {
+      setScreeningBusy(false);
+    }
+  }
+
+  /** Records or clears HR's decision. `null` clears, so a mis-click is undoable. */
+  async function decide(outcome: HrDecision | null) {
+    setDecisionBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/candidates/${encodeURIComponent(id)}/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outcome }),
+      });
+      if (!res.ok) {
+        setError((await res.json().catch(() => ({}))).error || "Could not save the decision.");
+        return;
+      }
+      await load();
+      onChanged();
+    } catch {
+      setError("Could not reach the server. Please try again.");
+    } finally {
+      setDecisionBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="fixed inset-0 z-30 bg-slate-900/20" onClick={onClose} />
@@ -77,7 +128,18 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged }: Props
         </Button>
         {error && <Alert>{error}</Alert>}
         {!c && !error && <p className="text-slate-400">Loading…</p>}
-        {c && <Detail c={c} joiningLabels={joiningLabels} onReevaluate={reevaluate} onReinterview={allowReinterview} />}
+        {c && (
+          <Detail
+            c={c}
+            joiningLabels={joiningLabels}
+            screeningBusy={screeningBusy}
+            decisionBusy={decisionBusy}
+            onApproveResume={approveResume}
+            onReevaluate={reevaluate}
+            onReinterview={allowReinterview}
+            onDecide={decide}
+          />
+        )}
       </aside>
     </>
   );
@@ -86,13 +148,21 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged }: Props
 function Detail({
   c,
   joiningLabels,
+  screeningBusy,
+  decisionBusy,
+  onApproveResume,
   onReevaluate,
   onReinterview,
+  onDecide,
 }: {
   c: Candidate;
   joiningLabels: Record<string, string>;
+  screeningBusy: boolean;
+  decisionBusy: boolean;
+  onApproveResume: () => void;
   onReevaluate: () => void;
   onReinterview: () => void;
+  onDecide: (outcome: HrDecision | null) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const integrity = computeIntegrity(c.proctoring.events);
@@ -106,13 +176,13 @@ function Detail({
   const canReevaluate = c.status === "completed" || c.status === "evaluation_failed";
 
   const facts: [string, React.ReactNode][] = [
-    ["Email", c.email],
-    ["Phone", c.phone],
+    ["Email", c.email || "–"],
+    ["Phone", c.phone || "–"],
     ["Location", c.currentLocation || "–"],
-    ["Experience", `${c.totalExperience} years`],
-    ["Current CTC", `₹${c.currentCTC} LPA`],
-    ["Expected CTC", `₹${c.expectedCTC} LPA`],
-    ["Can join", joiningLabels[c.joiningCategory] ?? c.joiningCategory],
+    ["Experience", c.profileComplete ? `${c.totalExperience} years` : "–"],
+    ["Current CTC", c.profileComplete ? `₹${c.currentCTC} LPA` : "–"],
+    ["Expected CTC", c.profileComplete ? `₹${c.expectedCTC} LPA` : "–"],
+    ["Can join", c.profileComplete ? (joiningLabels[c.joiningCategory] ?? c.joiningCategory) : "–"],
     [
       "LinkedIn",
       /^https?:\/\//.test(c.linkedin) ? (
@@ -131,9 +201,10 @@ function Detail({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-bold">{c.fullName}</h2>
-        <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
+        <h2 className="text-xl font-bold">{c.fullName || "Resume submitted"}</h2>
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
           {c.jobTitle} <Pill tone={STATUS[c.status].tone}>{STATUS[c.status].label}</Pill>
+          {c.decision && <DecisionPill outcome={c.decision.outcome} />}
         </div>
       </div>
 
@@ -148,6 +219,34 @@ function Detail({
         </div>
       )}
       {c.evaluationError && <Alert>Evaluation error: {c.evaluationError}</Alert>}
+      {c.screeningError && <Alert>Resume screening or interview preparation error: {c.screeningError}</Alert>}
+      {c.questionsFallback && (
+        <Alert tone="info">
+          The AI provider could not write interview questions, so this interview used questions built from the job
+          description. They probe the role rather than this candidate&apos;s resume, so weigh the answers accordingly.
+        </Alert>
+      )}
+
+      {c.resumeScreening && <ResumeScreeningPanel report={c.resumeScreening} />}
+
+      {c.notifications && c.notifications.length > 0 && (
+        <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <h3 className="font-semibold">Notifications sent</h3>
+          <ul className="mt-2 space-y-1.5 text-sm">
+            {[...c.notifications].reverse().map((n, index) => (
+              <li key={index} className="flex flex-wrap items-baseline gap-2">
+                <Pill tone={n.ok ? "good" : "warn"}>{NOTIFICATION_LABEL[n.event]}</Pill>
+                <span className="text-xs text-slate-500">{new Date(n.at).toLocaleString()}</span>
+                {!n.ok && <span className="text-xs text-amber-700">{n.error}</span>}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-slate-500">
+            Nothing is ever sent to reject a candidate. A failed send means the candidate has not been told, so contact
+            them manually.
+          </p>
+        </section>
+      )}
 
       {s && (
         <div>
@@ -166,12 +265,33 @@ function Detail({
       )}
 
       <div className="flex flex-wrap gap-2">
+        <Button onClick={() => onDecide("selected")} disabled={decisionBusy}>
+          Select
+        </Button>
+        <Button variant="danger" onClick={() => onDecide("rejected")} disabled={decisionBusy}>
+          Reject
+        </Button>
+        {c.decision && (
+          <>
+            <Button variant="ghost" onClick={() => onDecide(null)} disabled={decisionBusy}>
+              Clear decision
+            </Button>
+            <span className="self-center text-xs text-slate-500">
+              Decided {new Date(c.decision.at).toLocaleString()}
+            </span>
+          </>
+        )}
         <a
           href={`/api/admin/candidates/${encodeURIComponent(c.id)}/resume`}
           className="inline-flex items-center rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-600 hover:bg-brand-50"
         >
           Download resume
         </a>
+        {c.status === "awaiting_screening" && (
+          <Button onClick={onApproveResume} disabled={screeningBusy}>
+            {screeningBusy ? "Preparing interview…" : "Approve & prepare interview"}
+          </Button>
+        )}
         {canReevaluate && (
           <Button variant="ghost" onClick={onReevaluate}>
             Re-run AI evaluation
@@ -182,7 +302,7 @@ function Detail({
             Allow re-interview
           </Button>
         )}
-        <Button
+        {c.status !== "awaiting_screening" && c.status !== "screening" && <Button
           variant="ghost"
           onClick={() => {
             navigator.clipboard.writeText(`${window.location.origin}/interview/${c.id}`);
@@ -191,7 +311,7 @@ function Detail({
           }}
         >
           {copied ? "Copied ✓" : "Copy interview link"}
-        </Button>
+        </Button>}
       </div>
 
       <dl className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-1.5 text-sm">

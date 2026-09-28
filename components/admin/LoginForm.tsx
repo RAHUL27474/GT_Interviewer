@@ -1,11 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Alert, Button, Card, CardTitle, Field, inputClass } from "../ui";
 
 export function LoginForm() {
-  const router = useRouter();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -20,7 +18,8 @@ export function LoginForm() {
       body: JSON.stringify({ password }),
     });
     if (res.ok) {
-      router.refresh();
+      // Perform a full navigation so the server component reads the newly set auth cookie.
+      window.location.replace("/admin");
     } else {
       setError((await res.json().catch(() => ({}))).error || "Sign in failed.");
       setBusy(false);

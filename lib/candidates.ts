@@ -1,13 +1,13 @@
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { evaluateInterview, generateQuestions, resumeToPart } from "./ai";
 import { config } from "./config";
 import { HttpError } from "./http";
+import { readStoredObject } from "./object-storage";
 import { computeIntegrity } from "./proctoring";
 import { computeScores } from "./scoring";
-import { RESUME_DIR, store } from "./store";
-import type { Candidate, CandidateSummary, Evaluation, InterviewState } from "./types";
+import { store } from "./store";
+import type { Candidate, CandidateSummary, Evaluation, HrDecision, InterviewState } from "./types";
 
 export function interviewState(c: Candidate): InterviewState {
   const answered = c.answers.length;
@@ -24,6 +24,7 @@ export function interviewState(c: Candidate): InterviewState {
     nextQuestion: open ? { index: answered, text: c.questions[answered].question } : null,
     interrupted: Boolean(c.interruption),
     interruptionReason: c.interruption?.reason ?? null,
+    screeningStatus: c.resumeScreening?.status ?? null,
     hrContact: config.hrContact,
     maxWarnings: config.maxWarnings,
     awayGraceSeconds: config.awayGraceSeconds,
@@ -43,13 +44,29 @@ export function toSummary(c: Candidate): CandidateSummary {
     currentCTC: c.currentCTC,
     expectedCTC: c.expectedCTC,
     joiningCategory: c.joiningCategory,
+    profileComplete: c.profileComplete,
     status: c.status,
     answered: c.answers.length,
     totalQuestions: c.questions.length,
     scores: c.scores ?? null,
     interrupted: Boolean(c.interruption),
     integrity: computeIntegrity(c.proctoring.events),
+    decision: c.decision?.outcome ?? null,
+    decidedAt: c.decision?.at ?? null,
   };
+}
+
+/**
+ * Records HR's hire decision, or clears it with `null` so a mis-click can be
+ * undone. Kept independent of the AI recommendation, which never changes.
+ */
+export async function setDecision(id: string, outcome: HrDecision | null) {
+  const saved = await store.updateCandidate(id, (c) => {
+    if (outcome) c.decision = { outcome, at: new Date().toISOString() };
+    else delete c.decision;
+  });
+  if (!saved) throw new HttpError(404, "Candidate not found.");
+  return saved;
 }
 
 /** Throws unless `sessionId` is the live session of an in-progress interview. Updates lastSeenAt. */
@@ -157,7 +174,7 @@ export async function resetForReinterview(id: string) {
   }
 
   const ext = path.extname(c.resume.storedAs);
-  const buffer = await fs.readFile(path.join(RESUME_DIR, c.resume.storedAs));
+  const buffer = await readStoredObject(`resumes/${c.resume.storedAs}`);
   const questions = await generateQuestions({
     job: c.jobSnapshot,
     candidate: c,

@@ -1,3 +1,4 @@
+import { accessExpired, requireCandidate } from "@/lib/access";
 import { interviewState, newSessionId } from "@/lib/candidates";
 import { handler, HttpError } from "@/lib/http";
 import { logger, who } from "@/lib/log";
@@ -17,10 +18,14 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
   // Required before an interview can begin (the page also enforces this before calling us).
   if (!fullscreen) throw new HttpError(400, "The interview can only start in fullscreen.");
   if (!screenShared) throw new HttpError(400, "Please share your entire screen to start the interview.");
+  const current = await store.getCandidate(id);
+  if (!current) throw new HttpError(404, "Interview not found.");
+  await requireCandidate(current);
   const sessionId = newSessionId();
 
   const updated = await store.updateCandidate(id, (c) => {
     if (c.status !== "ready") throw new HttpError(409, "This interview has already been started.");
+    if (accessExpired(c)) throw new HttpError(403, "The time to start this interview has ended. Please contact HR.");
     const now = new Date().toISOString();
     c.status = "in_progress";
     c.sessionId = sessionId;

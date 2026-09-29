@@ -52,6 +52,13 @@ async function main() {
   });
   console.log(`Staff accounts: ${users.length} copied`);
 
+  // Settings: the connected Google account (its token is encrypted with SESSION_SECRET, so keep that the same).
+  const googleSetting = await jsonDb.getSetting("google");
+  if (googleSetting) {
+    await pg.setSetting("google", googleSetting);
+    console.log("Google connection copied");
+  }
+
   let added = 0;
   let skipped = 0;
   for (const c of await jsonDb.listCandidates()) {

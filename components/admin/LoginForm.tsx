@@ -31,7 +31,7 @@ export function LoginForm() {
   return (
     <Card className="mx-auto mt-10 max-w-sm">
       <CardTitle>Staff sign in</CardTitle>
-      <p className="-mt-2 mb-4 text-sm text-slate-500">For HR and Managers. Applicants use the link sent to them.</p>
+      <p className="-mt-2 mb-4 text-sm text-slate-500">For HR and Managers. Applicants log in at the home page with the details emailed to them.</p>
       <form onSubmit={onSubmit} className="space-y-4">
         {error && <Alert>{error}</Alert>}
         <Field label="Email" htmlFor="email">

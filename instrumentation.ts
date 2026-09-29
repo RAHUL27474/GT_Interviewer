@@ -3,19 +3,35 @@ export async function register() {
     const { purgeOldMedia, resumePendingEvaluations, sweepStaleInterviews } = await import("./lib/candidates");
     const { purgeDeactivatedAccounts } = await import("./lib/auth");
     const { config } = await import("./lib/config");
-    const { activeModel } = await import("./lib/ai");
+    const { activeModel, SPEECH_TO_TEXT_LABEL } = await import("./lib/ai");
     const { logger } = await import("./lib/log");
-    const whisper = config.aiProvider === "hf" && config.hfWhisper ? config.hfWhisperModel : "browser only";
     const { databaseLabel } = await import("./lib/store");
     const { fileStorageLabel } = await import("./lib/files");
-    logger("startup").info(`AI: ${config.aiProvider} (${activeModel()}), speech-to-text: ${whisper}`);
-    logger("startup").info(`Database: ${databaseLabel}; files: ${fileStorageLabel}`);
+    const { emailLabel } = await import("./lib/email");
+    const stt = SPEECH_TO_TEXT_LABEL[config.speechToText];
+    logger("startup").info(`AI: ${config.aiProvider} (${activeModel()}), speech-to-text: ${stt}`);
+    logger("startup").info(`Database: ${databaseLabel}; files: ${fileStorageLabel}; email: ${emailLabel}`);
     // Don't block server startup on AI calls.
     resumePendingEvaluations().catch((err) => console.error("Resuming evaluations failed:", err));
     // Auto-submit interviews whose browser went silent (closed, crashed, or offline).
     setInterval(() => {
       sweepStaleInterviews().catch((err) => console.error("Interview sweep failed:", err));
     }, 20_000);
+    // New applications from the job Google Forms, and the interview login emails that have come due.
+    const { formPollMs, syncAllForms } = await import("./lib/intake");
+    const { sendDueInvites } = await import("./lib/access");
+    const { googleConnection, googleConfigured } = await import("./lib/google");
+    const google = await googleConnection().catch(() => null);
+    logger("startup").info(
+      `Google: ${google ? `connected as ${google.email}` : googleConfigured ? "not connected (connect it in Jobs)" : "GOOGLE_CLIENT_ID not set"}; ` +
+        `login emails ${config.inviteDelayMinutes} min after applying, ${config.interviewAccessHours} h to start`,
+    );
+    setInterval(() => {
+      syncAllForms().catch((err) => console.error("Form check failed:", err));
+    }, formPollMs());
+    setInterval(() => {
+      sendDueInvites().catch((err) => console.error("Sending invites failed:", err));
+    }, 30_000);
     // Hourly cleanup, also at startup: staff accounts deactivated too long, and interview media past
     // MEDIA_RETENTION_DAYS.
     const purge = () => {

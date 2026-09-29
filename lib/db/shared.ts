@@ -7,6 +7,7 @@ export interface Db {
   listCandidates(): Promise<Candidate[]>;
   listCandidatesByStatus(...statuses: CandidateStatus[]): Promise<Candidate[]>;
   getCandidate(id: string): Promise<Candidate | null>;
+  listCandidatesByEmail(email: string): Promise<Candidate[]>;
   hasApplied(email: string, jobId: string): Promise<boolean>;
   addCandidate(candidate: Candidate): Promise<void>;
   /** fn mutates the candidate in place, under a lock. Returns the updated candidate, or null if missing. */
@@ -22,6 +23,11 @@ export interface Db {
   listJobs(): Promise<Job[]>;
   saveJob(job: Job): Promise<Job>;
   deleteJob(id: string): Promise<boolean>;
+
+  /** App-wide settings (e.g. the connected Google account), by key; null when unset. */
+  getSetting<T>(key: string): Promise<T | null>;
+  /** Stores a setting; null removes it. */
+  setSetting(key: string, value: unknown): Promise<void>;
 }
 
 /** Jobs a brand-new install starts with. */

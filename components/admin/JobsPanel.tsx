@@ -2,45 +2,147 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import type { Job } from "@/lib/types";
+import type { GoogleStatus, Job } from "@/lib/types";
 import { Alert, Button, Card, CardTitle, Field, inputClass, Pill } from "../ui";
 
-export function JobsPanel({ jobs }: { jobs: Job[] }) {
+export function JobsPanel({ jobs, google }: { jobs: Job[]; google: GoogleStatus }) {
   const [editing, setEditing] = useState<Job | "new" | null>(null);
+  const [notice, setNotice] = useState("");
 
   return (
     <div className="space-y-4">
+      <GoogleCard google={google} />
+
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-sm text-slate-500">
-          The salary budget (LPA) is used for scoring only and is never shown to applicants.
+          Each job gets a Google Form to share with applicants. The salary budget (LPA) is used for scoring only and is
+          never shown to them.
         </p>
         <Button onClick={() => setEditing("new")} className="ml-auto">
           + New job
         </Button>
       </div>
 
+      {notice && <Alert>{notice}</Alert>}
       {editing && (
-        <JobForm key={editing === "new" ? "new" : editing.id} job={editing === "new" ? null : editing} onDone={() => setEditing(null)} />
+        <JobForm
+          key={editing === "new" ? "new" : editing.id}
+          job={editing === "new" ? null : editing}
+          canCreateForm={Boolean(google.connection)}
+          onDone={(warning) => {
+            setEditing(null);
+            setNotice(warning ?? "");
+          }}
+        />
       )}
 
       {jobs.map((j) => (
-        <JobCard key={j.id} job={j} onEdit={() => setEditing(j)} />
+        <JobCard key={j.id} job={j} googleConnected={Boolean(google.connection)} onEdit={() => setEditing(j)} />
       ))}
     </div>
   );
 }
 
-function JobCard({ job, onEdit }: { job: Job; onEdit: () => void }) {
+function GoogleCard({ google }: { google: GoogleStatus }) {
   const router = useRouter();
+  const { connection } = google;
+
+  async function disconnect() {
+    if (!confirm("Disconnect this Google account? Job forms stay in it, but new applications won't be read until you connect again.")) return;
+    await fetch("/api/admin/google", { method: "DELETE" });
+    router.replace("/admin?tab=jobs");
+    router.refresh();
+  }
+
+  const emailLine =
+    google.emailRoute === "smtp"
+      ? "Interview emails are sent through your SMTP server."
+      : google.emailRoute === "gmail"
+        ? `Interview emails are sent from ${connection?.email}.`
+        : "Emails can't be sent yet: connect Google (with Gmail permission) or set SMTP_HOST. Until then, use \"Send new login details\" on each candidate and pass the password on.";
+
+  return (
+    <Card className="!p-4">
+      {google.message && (
+        <div className="mb-3">
+          <Alert tone={google.message.tone}>{google.message.text}</Alert>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-2xl">📝</span>
+        <div className="min-w-0 flex-1 text-sm">
+          {connection ? (
+            <>
+              <p>
+                Google account: <strong>{connection.email}</strong> <Pill tone="good">Connected</Pill>
+              </p>
+              <p className="text-slate-500">
+                Job forms are created in this account and checked for new applications every minute. {emailLine}
+              </p>
+            </>
+          ) : (
+            <>
+              <p>
+                <strong>No Google account connected.</strong>
+              </p>
+              <p className="text-slate-500">
+                {google.configured
+                  ? "Connect the company Google account to create job application forms and read applications."
+                  : "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env (see the README), restart, then connect here."}{" "}
+                {google.emailRoute === "smtp" && emailLine}
+              </p>
+            </>
+          )}
+        </div>
+        {google.canConnect && google.configured && (
+          <div className="flex gap-2">
+            <a
+              href="/api/admin/google/connect"
+              className="inline-flex items-center rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-600 hover:bg-brand-50"
+            >
+              {connection ? "Switch account" : "Connect Google"}
+            </a>
+            {connection && (
+              <Button variant="ghost" onClick={disconnect}>
+                Disconnect
+              </Button>
+            )}
+          </div>
+        )}
+        {!google.canConnect && !connection && <p className="text-xs text-slate-500">A Manager can connect it.</p>}
+      </div>
+    </Card>
+  );
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      variant="ghost"
+      onClick={() => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {copied ? "Copied ✓" : label}
+    </Button>
+  );
+}
+
+function JobCard({ job, googleConnected, onEdit }: { job: Job; googleConnected: boolean; onEdit: () => void }) {
+  const router = useRouter();
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const form = job.googleForm;
 
   async function remove() {
     if (
       !confirm(
         `Delete the job "${job.title}"?
 
-It will disappear from the application form and job list. Candidates who already applied keep their interviews and scores.
+Its Google Form will stop accepting applications. Candidates who already applied keep their interviews and scores.
 
 Tip: to stop new applications but keep the job, edit it and untick "Open for applications" instead.`,
       )
@@ -51,6 +153,14 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
     router.refresh();
   }
 
+  async function createForm() {
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/admin/jobs/${encodeURIComponent(job.id)}/form`, { method: "POST" });
+    setBusy(false);
+    if (!res.ok) return setError((await res.json().catch(() => ({}))).error || "Could not create the form.");
+    router.refresh();
+  }
 
   return (
     <Card>
@@ -65,17 +175,34 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
             {job.salaryMax ? `₹${job.salaryMin ?? 0}–${job.salaryMax} LPA` : "not set"}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              navigator.clipboard.writeText(`${window.location.origin}/?job=${job.id}`);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            }}
-          >
-            {copied ? "Copied ✓" : "Copy apply link"}
-          </Button>
+        <div className="flex flex-wrap gap-2">
+          {form ? (
+            <>
+              <CopyButton text={form.responderUri} label="Copy form link" />
+              <a
+                href={form.responderUri}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Open form
+              </a>
+              <a
+                href={`https://docs.google.com/forms/d/${form.formId}/edit`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Edit in Google Forms
+              </a>
+            </>
+          ) : (
+            googleConnected && (
+              <Button variant="secondary" onClick={createForm} disabled={busy}>
+                {busy ? "Creating…" : "Create Google Form"}
+              </Button>
+            )
+          )}
           <Button variant="secondary" onClick={onEdit}>
             Edit
           </Button>
@@ -89,6 +216,28 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
           <Alert>{error}</Alert>
         </div>
       )}
+      {form && (
+        <div className="mt-3 space-y-1 text-xs text-slate-500">
+          <p>
+            Form in {form.owner} ·{" "}
+            {form.lastCheckedAt ? `last checked ${new Date(form.lastCheckedAt).toLocaleTimeString()}` : "not checked yet"}
+            {!job.active && " · closed jobs aren't checked"}
+          </p>
+          {form.lastError && <p className="text-red-600">Problem reading responses: {form.lastError}</p>}
+          {form.skipped?.length ? (
+            <details>
+              <summary className="cursor-pointer">{form.skipped.length} response(s) not added</summary>
+              <ul className="mt-1 list-disc pl-5">
+                {form.skipped.map((s) => (
+                  <li key={s.at + s.name}>
+                    {new Date(s.at).toLocaleString()} · {s.name}: {s.reason}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </div>
+      )}
       <div className="mt-3 max-h-48 overflow-auto rounded-lg bg-slate-50 p-3 text-sm whitespace-pre-wrap text-slate-700">
         {job.description}
       </div>
@@ -96,7 +245,15 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
   );
 }
 
-function JobForm({ job, onDone }: { job: Job | null; onDone: () => void }) {
+function JobForm({
+  job,
+  canCreateForm,
+  onDone,
+}: {
+  job: Job | null;
+  canCreateForm: boolean;
+  onDone: (warning?: string) => void;
+}) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -116,15 +273,17 @@ function JobForm({ job, onDone }: { job: Job | null; onDone: () => void }) {
         salaryMax: f.get("salaryMax"),
         description: f.get("description"),
         active: f.get("active") === "on",
+        createForm: f.get("createForm") === "on",
       }),
     });
     setBusy(false);
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setError((await res.json().catch(() => ({}))).error || "Could not save the job.");
+      setError(data.error || "Could not save the job.");
       return;
     }
     router.refresh();
-    onDone();
+    onDone(data.warning);
   }
 
   return (
@@ -149,7 +308,7 @@ function JobForm({ job, onDone }: { job: Job | null; onDone: () => void }) {
             label="Job description"
             htmlFor="description"
             className="sm:col-span-2"
-            hint="Most interview questions are generated from this text, so list the skills and responsibilities you want tested."
+            hint="Shown on the application form, and most interview questions are generated from it, so list the skills and responsibilities you want tested."
           >
             <textarea
               id="description"
@@ -164,14 +323,27 @@ function JobForm({ job, onDone }: { job: Job | null; onDone: () => void }) {
         </div>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" name="active" defaultChecked={job?.active ?? true} className="size-4 accent-brand-600" />
-          Open for applications
+          Open for applications {job?.googleForm && "(closing the job also closes its Google Form)"}
         </label>
+        {!job && (
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="createForm"
+              defaultChecked={canCreateForm}
+              disabled={!canCreateForm}
+              className="size-4 accent-brand-600"
+            />
+            Create a Google Form for applications
+            {!canCreateForm && <span className="text-slate-400">(connect a Google account first)</span>}
+          </label>
+        )}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onDone}>
+          <Button type="button" variant="ghost" onClick={() => onDone()}>
             Cancel
           </Button>
           <Button type="submit" disabled={busy}>
-            Save job
+            {busy ? "Saving…" : "Save job"}
           </Button>
         </div>
       </form>

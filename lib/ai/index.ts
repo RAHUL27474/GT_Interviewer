@@ -6,7 +6,7 @@ import { config } from "../config";
 import { files, mediaKey } from "../files";
 import type { Candidate, CandidateProfile, Evaluation, Job, Question } from "../types";
 import { claudeStructured } from "./claude";
-import { geminiStructured } from "./gemini";
+import { geminiStructured, geminiTranscribe } from "./gemini";
 import { hfStructured, hfTranscribe } from "./hf";
 import { logger, since, who } from "../log";
 import { mockEvaluation, mockQuestions } from "./mock";
@@ -38,19 +38,27 @@ async function structuredCall<T>(label: string, req: StructuredRequest): Promise
   }
 }
 
-const VIDEO_MIME: Record<string, string> = { ".webm": "audio/webm", ".mp4": "audio/mp4" };
+// Whisper wants the audio type; Gemini the video type (it listens to the soundtrack either way).
+const MEDIA_MIME: Record<string, { audio: string; video: string }> = {
+  ".webm": { audio: "audio/webm", video: "video/webm" },
+  ".mp4": { audio: "audio/mp4", video: "video/mp4" },
+};
+
+/** Label for where a transcript came from, for logs and the dashboard. */
+export const SPEECH_TO_TEXT_LABEL = { gemini: "Gemini", hf: "Whisper", off: "browser only" } as const;
 
 /**
- * With the hf provider, replaces each answer's browser transcript with a Whisper transcript of its video.
- * Returns the new transcripts by answer index; answers that fail keep their browser transcript.
+ * When server speech-to-text is on (SPEECH_TO_TEXT), replaces each answer's browser transcript with one made from
+ * its video. Returns the new transcripts by answer index; answers that fail keep their browser transcript.
  */
-export async function whisperTranscripts(candidate: Candidate): Promise<Map<number, string>> {
+export async function serverTranscripts(candidate: Candidate): Promise<Map<number, string>> {
   const result = new Map<number, string>();
-  if (config.aiProvider !== "hf" || !config.hfWhisper) return result;
+  const stt = config.speechToText;
+  if (stt === "off") return result;
 
-  const wlog = logger("whisper");
+  const wlog = logger("speech-to-text");
   for (const [i, a] of candidate.answers.entries()) {
-    if (a.transcriptSource === "whisper") continue;
+    if (a.transcriptSource && a.transcriptSource !== "browser") continue;
     if (!a.video) {
       wlog.info(`${who(candidate)} answer ${i + 1}: no video, keeping browser transcript`);
       continue;
@@ -58,7 +66,8 @@ export async function whisperTranscripts(candidate: Candidate): Promise<Map<numb
     const start = Date.now();
     try {
       const data = await files.get(mediaKey(candidate.id, a.video));
-      const text = await hfTranscribe(data, VIDEO_MIME[path.extname(a.video)] ?? "audio/webm");
+      const mime = MEDIA_MIME[path.extname(a.video)] ?? MEDIA_MIME[".webm"];
+      const text = stt === "gemini" ? await geminiTranscribe(data, mime.video) : await hfTranscribe(data, mime.audio);
       const mb = (data.length / 1024 / 1024).toFixed(1);
       if (text) {
         result.set(i, text.slice(0, config.maxTranscriptChars));
@@ -117,7 +126,8 @@ const QUESTIONS_SCHEMA = {
 export async function generateQuestions(opts: {
   job: Pick<Job, "title" | "description">;
   candidate: CandidateProfile;
-  resumePart: Part;
+  /** Missing when the applicant's resume couldn't be read: every question then comes from the job description. */
+  resumePart: Part | null;
 }): Promise<Question[]> {
   const { job, candidate, resumePart } = opts;
   const count = config.questionCount;
@@ -125,7 +135,11 @@ export async function generateQuestions(opts: {
     log.info(`Questions for ${candidate.fullName}: mock mode, using placeholder questions`);
     return mockQuestions(job, count);
   }
-  const jdCount = Math.max(1, Math.round(count * 0.7));
+  const jdCount = resumePart ? Math.max(1, Math.round(count * 0.7)) : count;
+  const resumeRule = resumePart
+    ? `- The remaining ${count - jdCount} question(s) should probe resume claims that matter most for THIS role \
+(e.g. ask for specifics about a relevant project or achievement to check depth).`
+    : "- No resume is available, so do not refer to one.";
   const prompt = `<job_title>${job.title}</job_title>
 <job_description>
 ${job.description}
@@ -135,14 +149,13 @@ ${job.description}
 ${profileText(candidate)}
 </candidate_profile>
 
-The candidate's resume is attached above.
+${resumePart ? "The candidate's resume is attached above." : "The candidate's resume could not be read."}
 
 Write exactly ${count} interview questions for this candidate.
 
 - ${jdCount} questions must be based on the job description: test the core skills, tools and responsibilities it lists. \
 Prefer practical, scenario-based questions ("how would you...", "walk me through...") over definitions or trivia.
-- The remaining ${count - jdCount} question(s) should probe resume claims that matter most for THIS role \
-(e.g. ask for specifics about a relevant project or achievement to check depth).
+${resumeRule}
 - Pitch difficulty to the candidate's experience level.
 - This is a video interview: each question is read aloud to the candidate, who answers verbally in about \
 ${config.minutesPerQuestion} minutes. Write questions that sound natural when spoken: one or two short sentences, one \
@@ -153,7 +166,7 @@ focused thing per question, no bullet lists, code snippets, or long numbers to r
 
   const result = await structuredCall<{ questions: Question[] }>(`Questions for ${candidate.fullName}`, {
     system: SYSTEM,
-    parts: [resumePart, { kind: "text", text: prompt }],
+    parts: resumePart ? [resumePart, { kind: "text", text: prompt }] : [{ kind: "text", text: prompt }],
     schema: QUESTIONS_SCHEMA,
     effort: "medium",
   });

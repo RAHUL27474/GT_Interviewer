@@ -1,6 +1,8 @@
 import { after } from "next/server";
+import { isCandidateSession } from "@/lib/access";
 import { interruptInterview, runEvaluation } from "@/lib/candidates";
-import { handler } from "@/lib/http";
+import { handler, HttpError } from "@/lib/http";
+import { store } from "@/lib/store";
 
 export const maxDuration = 300;
 
@@ -10,6 +12,9 @@ export const maxDuration = 300;
  */
 export const POST = handler(async (request: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
+  const c = await store.getCandidate(id);
+  if (!c) throw new HttpError(404, "Interview not found.");
+  if (!(await isCandidateSession(c))) throw new HttpError(401, "Not logged in.");
   // sendBeacon posts the JSON as text/plain, so parse the raw body.
   const body = JSON.parse((await request.text()) || "{}") as { reason?: string };
   const reason = String(body.reason || "The interview was stopped midway").slice(0, 200);

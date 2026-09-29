@@ -2,14 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import type { CandidateSummary, Job, PublicStaffUser } from "@/lib/types";
+import type { CandidateSummary, GoogleStatus, Job, PublicStaffUser } from "@/lib/types";
 import { isManagerOrAbove, ROLE_LABEL } from "@/lib/roles";
 import { AccountDialog } from "./AccountDialog";
 import { TeamPanel } from "./TeamPanel";
 import { Button, cn, inputClass, Pill } from "../ui";
 import { CandidateDrawer } from "./CandidateDrawer";
 import { JobsPanel } from "./JobsPanel";
-import { IntegrityPill, RecommendationPill, Signed, STATUS } from "./shared";
+import { IntegrityPill, RecommendationPill, Signed, STATUS, statusBadge } from "./shared";
 
 type SortKey = "fullName" | "jobTitle" | "createdAt" | "status" | "totalExperience" | "expectedCTC" | "interview" | "joining" | "salary" | "total" | "integrity";
 
@@ -35,6 +35,8 @@ function sortValue(c: CandidateSummary, key: SortKey): string | number {
 }
 
 interface Props {
+  initialTab: "candidates" | "jobs";
+  google: GoogleStatus;
   me: PublicStaffUser;
   team: PublicStaffUser[];
   deleteAfterDays: number;
@@ -43,11 +45,11 @@ interface Props {
   joiningLabels: Record<string, string>;
 }
 
-export function Dashboard({ me, team, deleteAfterDays, candidates, jobs, joiningLabels }: Props) {
+export function Dashboard({ initialTab, google, me, team, deleteAfterDays, candidates, jobs, joiningLabels }: Props) {
   const isManager = isManagerOrAbove(me.role);
   const [accountOpen, setAccountOpen] = useState(false);
   const router = useRouter();
-  const [tab, setTab] = useState<"candidates" | "jobs" | "team">("candidates");
+  const [tab, setTab] = useState<"candidates" | "jobs" | "team">(initialTab);
   const [jobFilter, setJobFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -78,7 +80,7 @@ export function Dashboard({ me, team, deleteAfterDays, candidates, jobs, joining
   function exportCsv() {
     const header = ["Name", "Email", "Phone", "Position", "Applied", "Status", "Experience", "Current CTC", "Expected CTC", "Joining", "Interview (/70)", "Joining pts", "Salary pts", "Total", "Recommendation", "Interrupted", "Integrity risk", "Proctoring flags"];
     const body = rows.map((c) => [
-      c.fullName, c.email, c.phone, c.jobTitle, c.createdAt.slice(0, 10), STATUS[c.status].label, c.totalExperience,
+      c.fullName, c.email, c.phone, c.jobTitle, c.createdAt.slice(0, 10), statusBadge(c).label, c.totalExperience,
       c.currentCTC, c.expectedCTC, joiningLabels[c.joiningCategory] ?? c.joiningCategory,
       c.scores?.interview.points ?? "", c.scores?.joining.points ?? "", c.scores?.salary.points ?? "",
       c.scores?.total ?? "", c.scores?.recommendation ?? "", c.interrupted ? "Yes" : "No", c.integrity.level,
@@ -134,7 +136,7 @@ export function Dashboard({ me, team, deleteAfterDays, candidates, jobs, joining
       {tab === "team" && isManager ? (
         <TeamPanel me={me} team={team} deleteAfterDays={deleteAfterDays} />
       ) : tab === "jobs" ? (
-        <JobsPanel jobs={jobs} />
+        <JobsPanel jobs={jobs} google={google} />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -208,8 +210,8 @@ export function Dashboard({ me, team, deleteAfterDays, candidates, jobs, joining
                       <td className="px-3 py-2.5 whitespace-nowrap">{c.jobTitle}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap">{new Date(c.createdAt).toLocaleDateString()}</td>
                       <td className="px-3 py-2.5">
-                        <Pill tone={STATUS[c.status].tone}>
-                          {STATUS[c.status].label}
+                        <Pill tone={statusBadge(c).tone}>
+                          {statusBadge(c).label}
                           {c.status === "in_progress" && ` ${c.answered}/${c.totalQuestions}`}
                         </Pill>
                         {c.interrupted && (

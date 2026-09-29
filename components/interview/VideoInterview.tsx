@@ -62,7 +62,8 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
   );
   const onScreenStopped = useRef<() => void>(() => {});
   const screen = useScreenShare(() => onScreenStopped.current());
-  const browserOk = transcript.supported !== false && recordingSupported;
+  // Browsers without speech recognition (Firefox) are fine when the server transcribes the videos.
+  const browserOk = (transcript.supported !== false || state.serverTranscription) && recordingSupported;
   const q = state.nextQuestion;
 
   // Checked after mount so server and first client render match.
@@ -717,8 +718,9 @@ function SetupPanel({
       <div className="space-y-3">
         <h1 className="text-xl font-bold">Please switch browser</h1>
         <p className="text-sm text-slate-600">
-          This video interview needs <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong> on a laptop or
-          desktop. Copy this page&apos;s link and open it there.
+          This video interview needs a laptop or desktop computer (phones and tablets can&apos;t share their screen),
+          ideally with <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong>. Copy this page&apos;s link and
+          open it there.
         </p>
         <Button variant="secondary" onClick={() => navigator.clipboard.writeText(window.location.href)}>
           Copy interview link

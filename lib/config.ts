@@ -16,6 +16,27 @@ function pickProvider(): AiProvider {
   return "mock";
 }
 
+export type SpeechToText = "gemini" | "hf" | "off";
+
+/**
+ * Which service re-transcribes answer videos on the server before grading (Claude can't hear audio, so this is
+ * separate from the AI provider). SPEECH_TO_TEXT if set; otherwise the active provider's own service if it has one,
+ * else whichever key is available (Gemini, then Hugging Face Whisper); "off" keeps only the browser transcript.
+ */
+export function pickSpeechToText(env: Record<string, string | undefined>, provider: AiProvider): SpeechToText {
+  const explicit = env.SPEECH_TO_TEXT?.trim().toLowerCase();
+  if (explicit === "gemini" || explicit === "hf" || explicit === "off") return explicit;
+  const gemini = realKey(env.GEMINI_API_KEY);
+  // HF_WHISPER=off is the older switch for the same thing.
+  const hf = realKey(env.HF_TOKEN) && env.HF_WHISPER !== "off";
+  if (provider === "hf" && hf) return "hf";
+  if (gemini) return "gemini";
+  if (hf) return "hf";
+  return "off";
+}
+
+const aiProvider = pickProvider();
+
 export const config = {
   companyName: process.env.COMPANY_NAME || "Careers",
   /** Shown to candidates whose interview was interrupted, e.g. "hr@company.com or +91 98xxxxxxxx". */
@@ -50,7 +71,36 @@ export const config = {
   minutesPerQuestion: Number(process.env.MINUTES_PER_QUESTION || 3),
   /** Thinking time after the question is read out, before recording starts. */
   prepSeconds: Number(process.env.PREP_SECONDS || 5),
-  aiProvider: pickProvider(),
+  aiProvider,
+  speechToText: pickSpeechToText(process.env, aiProvider),
+  /** Public address of the app, for links in emails, e.g. https://careers.example.com (no trailing slash). */
+  appUrl: (process.env.APP_URL || "").trim().replace(/\/+$/, ""),
+  /** Outgoing email. Leave SMTP_HOST empty to send no emails (HR then copies interview links by hand). */
+  smtp: {
+    host: process.env.SMTP_HOST?.trim() || "",
+    port: Number(process.env.SMTP_PORT || 587),
+    user: process.env.SMTP_USER?.trim() || "",
+    pass: process.env.SMTP_PASS || "",
+    from: process.env.MAIL_FROM?.trim() || "",
+  },
+  /** Google Cloud OAuth client, for creating job forms, reading responses and (without SMTP) sending email. */
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID?.trim() || "",
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET?.trim() || "",
+  },
+  /** How often every open job's Google Form is checked for new responses. */
+  formPollSeconds: Number(process.env.FORM_POLL_SECONDS || 60),
+  /** The interview login email goes out this long after the application. */
+  inviteDelayMinutes: Number(process.env.INVITE_DELAY_MINUTES ?? 30),
+  /** The candidate must start the interview within this many hours of the login email. */
+  interviewAccessHours: Number(process.env.INTERVIEW_ACCESS_HOURS || 24),
+  /** Dates and times in emails are written in this time zone. */
+  timeZone: process.env.TIME_ZONE || "Asia/Kolkata",
+  /** Comma-separated staff addresses told when an interview has been graded. Empty: no HR emails. */
+  hrNotifyEmails: (process.env.HR_NOTIFY_EMAILS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
   claudeModel: process.env.CLAUDE_MODEL || "claude-opus-5",
   claudeFallbacks: process.env.CLAUDE_FALLBACKS !== "off",
   geminiApiKey: process.env.GEMINI_API_KEY || "",
@@ -60,9 +110,8 @@ export const config = {
   hfModel: process.env.HF_MODEL || "Qwen/Qwen2.5-VL-72B-Instruct",
   /** Most images the HF provider accepts per request; extra webcam snapshots are left out of grading. */
   hfMaxImages: Number(process.env.HF_MAX_IMAGES || 5),
-  /** Speech-to-text model; re-transcribes each answer video when the hf provider is active. */
+  /** Speech-to-text model used when speechToText is "hf". */
   hfWhisperModel: process.env.HF_WHISPER_MODEL || "openai/whisper-large-v3-turbo",
-  hfWhisper: process.env.HF_WHISPER !== "off",
   maxTranscriptChars: 10000,
   maxResumeBytes: 5 * 1024 * 1024,
   maxVideoBytes: 100 * 1024 * 1024,

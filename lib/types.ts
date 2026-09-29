@@ -1,6 +1,6 @@
 export type StaffRole = "hr" | "manager" | "superadmin";
 
-/** A dashboard account. Applicants don't have accounts; they use their private interview link. */
+/** A dashboard account. Applicants don't have these; they get an interview login by email (CandidateAccess). */
 export interface StaffUser {
   id: string;
   email: string;
@@ -33,9 +33,73 @@ export interface Job {
   active: boolean;
   /** Staff email of whoever last created/edited this job. */
   updatedBy?: string;
+  /** The Google Form applicants fill in for this job (created from the dashboard). */
+  googleForm?: GoogleJobForm;
+}
+
+/** Form fields the app reads from each response, keyed to the form's question ids. */
+export type FormField =
+  | "fullName"
+  | "email"
+  | "phone"
+  | "totalExperience"
+  | "currentLocation"
+  | "linkedin"
+  | "currentCTC"
+  | "expectedCTC"
+  | "joiningCategory"
+  | "resumeUrl";
+
+export interface GoogleJobForm {
+  formId: string;
+  /** The link applicants open. */
+  responderUri: string;
+  /** Google account that owns the form. */
+  owner: string;
+  createdAt: string;
+  /** Question id for each field. Email may instead come from the form's own email collection. */
+  questionIds: Partial<Record<FormField, string>>;
+  emailFromSettings: boolean;
+  /** Responses submitted up to this time have been read (RFC 3339, from Google). */
+  syncedUntil?: string;
+  lastCheckedAt?: string;
+  /** Last problem reading responses, shown to HR; cleared on the next successful check. */
+  lastError?: string;
+  /** Responses that couldn't become candidates (e.g. already applied, no valid email). */
+  skipped?: { at: string; name: string; reason: string }[];
+}
+
+/** Candidate login for the interview: emailed after applying, valid for a limited time. */
+export interface CandidateAccess {
+  /** When the login email is due (applied + INVITE_DELAY_MINUTES). */
+  inviteAt: string;
+  passwordHash?: string;
+  /** Bumped when a new password is issued, signing out older sessions. */
+  version: number;
+  invitedAt?: string;
+  /** The interview must be started before this. */
+  expiresAt?: string;
+  /** How the last login details went out: emailed, or shown to HR to pass on. */
+  delivery?: "email" | "manual";
+  /** Last email failure; the invite is retried at retryAt. */
+  emailError?: string;
+  retryAt?: string;
 }
 
 export type PublicJob = Pick<Job, "id" | "title" | "location" | "description">;
+
+/** What the Jobs tab shows about the Google connection. */
+export interface GoogleStatus {
+  /** GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set. */
+  configured: boolean;
+  connection: { email: string; connectedAt: string; connectedBy: string; canSendMail: boolean } | null;
+  /** Managers and Super Admins may connect or disconnect. */
+  canConnect: boolean;
+  /** How emails go out now, or null when they can't. */
+  emailRoute: "smtp" | "gmail" | null;
+  /** Result of a connect attempt, shown once. */
+  message: { tone: "info" | "error"; text: string } | null;
+}
 
 export interface Question {
   question: string;
@@ -49,8 +113,8 @@ export interface Answer {
   /** Speech-to-text of the spoken answer. May contain recognition errors. */
   transcript: string;
   /** Where `transcript` came from; missing means the browser. */
-  transcriptSource?: "browser" | "whisper";
-  /** The original browser transcript, kept when Whisper replaced it. */
+  transcriptSource?: "browser" | "whisper" | "gemini";
+  /** The original browser transcript, kept when server speech-to-text replaced it. */
   browserTranscript?: string;
   timeTakenSec: number;
   submittedAt: string;
@@ -156,7 +220,17 @@ export interface Candidate extends CandidateProfile {
   jobTitle: string;
   /** Snapshot so later JD/budget edits don't change how this candidate is graded. */
   jobSnapshot: Pick<Job, "title" | "description" | "salaryMin" | "salaryMax">;
-  resume: { fileName: string; storedAs: string };
+  /** The stored resume file; null when the applicant's resume link couldn't be read. */
+  resume: { fileName: string; storedAs: string } | null;
+  /** Resume link from the Google Form. */
+  resumeUrl?: string;
+  /** Why the resume link couldn't be read (questions then come from the job description only). */
+  resumeProblem?: string;
+  source?: "website" | "google_form";
+  /** Google Form response this candidate came from. */
+  googleResponseId?: string;
+  /** Email + password login for the interview. Missing on older candidates, who use the link alone. */
+  access?: CandidateAccess;
   status: CandidateStatus;
   questions: Question[];
   answers: Answer[];
@@ -204,7 +278,11 @@ export interface CandidateSummary
   scores: Scores | null;
   interrupted: boolean;
   integrity: IntegritySummary;
+  /** For interviews not started yet: where the login invite stands. */
+  invite: InviteState | null;
 }
+
+export type InviteState = "scheduled" | "sent" | "email_failed" | "expired";
 
 export interface InterviewState {
   fullName: string;
@@ -223,4 +301,8 @@ export interface InterviewState {
   awayGraceSeconds: number;
   maxLookAwayWarnings: number;
   secondPersonGraceSeconds: number;
+  /** Answers are transcribed on the server, so the browser's own speech recognition is optional. */
+  serverTranscription: boolean;
+  /** The interview must be started before this (ISO), or null when there's no deadline. */
+  startBy: string | null;
 }

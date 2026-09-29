@@ -1,5 +1,5 @@
 import { INTEGRITY_LABEL } from "@/lib/proctoring";
-import type { CandidateStatus, IntegritySummary } from "@/lib/types";
+import type { CandidateStatus, IntegritySummary, InviteState } from "@/lib/types";
 import { cn, Pill, type Tone } from "../ui";
 
 export const STATUS: Record<CandidateStatus, { label: string; tone: Tone }> = {
@@ -9,6 +9,18 @@ export const STATUS: Record<CandidateStatus, { label: string; tone: Tone }> = {
   evaluation_failed: { label: "Eval failed", tone: "bad" },
   completed: { label: "Completed", tone: "good" },
 };
+
+/** For interviews not started yet: where the login email stands (replaces "Not started"). */
+export const INVITE: Record<InviteState, { label: string; tone: Tone }> = {
+  scheduled: { label: "Email scheduled", tone: "neutral" },
+  sent: { label: "Invited", tone: "neutral" },
+  email_failed: { label: "Email failed", tone: "bad" },
+  expired: { label: "Expired", tone: "bad" },
+};
+
+/** Status pill text and colour, with the invite state for interviews not started yet. */
+export const statusBadge = (c: { status: CandidateStatus; invite?: InviteState | null }) =>
+  c.invite ? INVITE[c.invite] : STATUS[c.status];
 
 const REC_TONE: Record<string, Tone> = { "Strong Hire": "good", Hire: "good", Maybe: "warn", Reject: "bad" };
 

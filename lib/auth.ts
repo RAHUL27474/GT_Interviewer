@@ -1,5 +1,5 @@
 // Staff accounts (HR and Manager) with email + password, and signed session cookies.
-// Applicants never sign in: their private interview link is their access.
+// Applicants sign in separately, with the password emailed to them (lib/access.ts).
 import crypto from "node:crypto";
 import { cookies } from "next/headers";
 import { config } from "./config";
@@ -72,21 +72,21 @@ export async function purgeDeactivatedAccounts(): Promise<string[]> {
 
 // ---------- Sessions ----------
 
-function secret() {
-  // Set SESSION_SECRET in production; otherwise derive one so it works out of the box.
+/** Signs sessions and encrypts stored secrets. Set SESSION_SECRET in production; otherwise one is derived. */
+export function appSecret() {
   return process.env.SESSION_SECRET || crypto.createHash("sha256").update(`session:${config.adminPassword}`).digest("hex");
 }
 
-const sign = (payload: string) => crypto.createHmac("sha256", secret()).update(payload).digest("base64url");
+const sign = (payload: string) => crypto.createHmac("sha256", appSecret()).update(payload).digest("base64url");
 
-export function sessionTokenFor(user: StaffUser) {
-  const payload = Buffer.from(
-    JSON.stringify({ uid: user.id, v: user.sessionVersion, exp: Date.now() + SESSION_MAX_AGE * 1000 }),
-  ).toString("base64url");
+/** A tamper-proof token carrying `data`, valid for `ttlSeconds`. */
+export function signedToken(data: object, ttlSeconds: number) {
+  const payload = Buffer.from(JSON.stringify({ ...data, exp: Date.now() + ttlSeconds * 1000 })).toString("base64url");
   return `${payload}.${sign(payload)}`;
 }
 
-function readToken(token: string): { uid: string; v: number; exp: number } | null {
+/** The data of a token from signedToken, or null if it was altered or has expired. */
+export function readSignedToken<T>(token: string): (T & { exp: number }) | null {
   const [payload, sig] = token.split(".");
   if (!payload || !sig) return null;
   const expected = sign(payload);
@@ -98,6 +98,12 @@ function readToken(token: string): { uid: string; v: number; exp: number } | nul
     return null;
   }
 }
+
+export function sessionTokenFor(user: StaffUser) {
+  return signedToken({ uid: user.id, v: user.sessionVersion }, SESSION_MAX_AGE);
+}
+
+const readToken = (token: string) => readSignedToken<{ uid: string; v: number }>(token);
 
 export async function setSessionCookie(user: StaffUser) {
   (await cookies()).set(SESSION_COOKIE, sessionTokenFor(user), {
@@ -169,10 +175,28 @@ export const requireManager = () => requireStaff(["manager", "superadmin"]);
 
 // ---------- Login ----------
 
-// Simple in-memory brute-force protection: 5 failures per email locks it for 10 minutes.
-const failures = new Map<string, { count: number; until: number }>();
-const MAX_FAILURES = 5;
-const LOCK_MS = 10 * 60 * 1000;
+/** Simple in-memory brute-force protection: 5 failures per email locks it for 10 minutes. */
+export function loginLimiter() {
+  const failures = new Map<string, { count: number; until: number }>();
+  const MAX_FAILURES = 5;
+  const LOCK_MS = 10 * 60 * 1000;
+  return {
+    /** Throws 429 while `key` is locked. */
+    check(key: string) {
+      const f = failures.get(key);
+      if (f && f.count >= MAX_FAILURES && f.until > Date.now()) {
+        throw new HttpError(429, "Too many failed attempts. Try again in 10 minutes.");
+      }
+    },
+    fail(key: string) {
+      const f = failures.get(key);
+      failures.set(key, { count: (f && f.until > Date.now() ? f.count : 0) + 1, until: Date.now() + LOCK_MS });
+    },
+    succeed: (key: string) => failures.delete(key),
+  };
+}
+
+const staffLimiter = loginLimiter();
 
 export async function login(emailInput: unknown, password: unknown): Promise<StaffUser> {
   await ensureFirstSuperAdmin();
@@ -180,18 +204,14 @@ export async function login(emailInput: unknown, password: unknown): Promise<Sta
     throw new HttpError(503, "No accounts yet. Set SUPER_ADMIN_EMAIL and ADMIN_PASSWORD in .env to create the first Super Admin.");
   }
   const email = String(emailInput ?? "").trim().toLowerCase();
-  const f = failures.get(email);
-  if (f && f.count >= MAX_FAILURES && f.until > Date.now()) {
-    throw new HttpError(429, "Too many failed attempts. Try again in 10 minutes.");
-  }
+  staffLimiter.check(email);
   const user = (await store.listUsers()).find((u) => u.email === email);
   if (!user || !verifyPassword(String(password ?? ""), user.passwordHash)) {
-    const next = { count: (f && f.until > Date.now() ? f.count : 0) + 1, until: Date.now() + LOCK_MS };
-    failures.set(email, next);
+    staffLimiter.fail(email);
     throw new HttpError(401, "Wrong email or password.");
   }
   if (!user.active) throw new HttpError(403, "This account has been deactivated. Contact your manager.");
-  failures.delete(email);
+  staffLimiter.succeed(email);
   const updated = { ...user, lastLoginAt: new Date().toISOString() };
   await store.saveUser(updated);
   return updated;

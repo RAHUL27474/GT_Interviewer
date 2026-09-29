@@ -11,6 +11,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
     "postinstall": "node scripts/copy-mediapipe.mjs",
     "migrate": "tsx --env-file=.env scripts/migrate-to-cloud.ts"
   },
@@ -22,6 +23,7 @@
     "@vladmandic/face-api": "^1.7.15",
     "mammoth": "^1.12.3",
     "next": "^16.3.6",
+    "nodemailer": "^10.0.12",
     "postgres": "^3.4.9",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
@@ -30,6 +32,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.2",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",

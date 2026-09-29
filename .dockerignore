@@ -1,0 +1,11 @@
+.git
+node_modules
+.next
+data
+.env
+.env.*
+!.env.example
+public/mediapipe
+public/faceapi
+*.tsbuildinfo
+npm-debug.log*

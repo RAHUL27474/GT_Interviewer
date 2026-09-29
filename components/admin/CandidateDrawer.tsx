@@ -4,7 +4,47 @@ import { useCallback, useEffect, useState } from "react";
 import type { Candidate } from "@/lib/types";
 import { Alert, Button, Pill } from "../ui";
 import { computeIntegrity, PROCTOR_EVENTS } from "@/lib/proctoring";
-import { IntegrityPill, RecommendationPill, Signed, STATUS } from "./shared";
+import { inviteState } from "@/lib/invite-state";
+import { IntegrityPill, RecommendationPill, Signed, statusBadge } from "./shared";
+
+interface LoginResult {
+  emailed?: boolean;
+  password?: string;
+  error?: string;
+}
+
+function loginResultText(r: LoginResult) {
+  if (r.emailed) return "New login details have been emailed to the candidate.";
+  if (r.password) {
+    return `The email couldn't be sent (${r.error}).\n\nPass these on to the candidate yourself (shown only once):\nLogin page: ${window.location.origin}/\nPassword: ${r.password}`;
+  }
+  return `Login details couldn't be sent: ${r.error ?? "unknown error"}`;
+}
+
+const when = (iso: string) => new Date(iso).toLocaleString();
+
+/** Where the interview login stands, with a button to send new details. */
+function LoginStatus({ c, onSendLogin }: { c: Candidate; onSendLogin: () => void }) {
+  const a = c.access;
+  const state = inviteState(c);
+  const text = !a
+    ? "Applied before interview logins existed: uses the private interview link."
+    : state === "scheduled"
+      ? `Login email scheduled for ${when(a.inviteAt)}.`
+      : state === "email_failed"
+        ? `Login email failed: ${a.emailError}. Retrying${a.retryAt ? ` at ${when(a.retryAt)}` : ""}.`
+        : state === "expired"
+          ? `Didn't start in time: login expired ${when(a.expiresAt!)}.`
+          : `Login ${a.delivery === "manual" ? "details given to HR to pass on" : "emailed"} ${when(a.invitedAt!)}; must start by ${when(a.expiresAt!)}.`;
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+      <span className="flex-1">{text}</span>
+      <Button variant="secondary" onClick={onSendLogin}>
+        {state === "scheduled" ? "Send login details now" : "Send new login details"}
+      </Button>
+    </div>
+  );
+}
 
 interface Props {
   id: string;
@@ -59,9 +99,22 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged, canDele
     const res = await fetch(`/api/admin/candidates/${encodeURIComponent(id)}/reset`, { method: "POST" });
     if (!res.ok) setError((await res.json().catch(() => ({}))).error || "Could not reset the interview.");
     else {
+      const result = (await res.json().catch(() => ({}))) as LoginResult;
       await load();
       onChanged();
+      alert(`New questions are ready. ${loginResultText(result)}`);
     }
+  }
+
+  async function sendLogin() {
+    if (!confirm("Send new login details now? This makes a new password (the old one stops working) and gives a fresh window to start.")) return;
+    setError("");
+    const res = await fetch(`/api/admin/candidates/${encodeURIComponent(id)}/invite`, { method: "POST" });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) return setError(result.error || "Could not send login details.");
+    await load();
+    onChanged();
+    alert(loginResultText(result));
   }
 
   async function deleteCandidate() {
@@ -93,6 +146,7 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged, canDele
             joiningLabels={joiningLabels}
             onReevaluate={reevaluate}
             onReinterview={allowReinterview}
+            onSendLogin={sendLogin}
             onDelete={canDelete ? deleteCandidate : undefined}
           />
         )}
@@ -106,12 +160,14 @@ function Detail({
   joiningLabels,
   onReevaluate,
   onReinterview,
+  onSendLogin,
   onDelete,
 }: {
   c: Candidate;
   joiningLabels: Record<string, string>;
   onReevaluate: () => void;
   onReinterview: () => void;
+  onSendLogin: () => void;
   onDelete?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -143,9 +199,20 @@ function Detail({
         "–"
       ),
     ],
-    ["Applied", new Date(c.createdAt).toLocaleString()],
+    [
+      "Resume link",
+      c.resumeUrl && /^https?:\/\//.test(c.resumeUrl) ? (
+        <a href={c.resumeUrl} target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline">
+          {c.resumeUrl}
+        </a>
+      ) : (
+        "–"
+      ),
+    ],
+    ["Applied", `${new Date(c.createdAt).toLocaleString()}${c.source === "google_form" ? " (Google Form)" : ""}`],
     ["Previous attempts", c.attempts?.length ?? 0],
   ];
+  const badge = statusBadge({ status: c.status, invite: inviteState(c) });
   const media = (file: string) => `/api/admin/candidates/${encodeURIComponent(c.id)}/media/${encodeURIComponent(file)}`;
   const mediaGone = Boolean(c.mediaDeletedAt);
   const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
@@ -155,9 +222,16 @@ function Detail({
       <div>
         <h2 className="text-xl font-bold">{c.fullName}</h2>
         <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-          {c.jobTitle} <Pill tone={STATUS[c.status].tone}>{STATUS[c.status].label}</Pill>
+          {c.jobTitle} <Pill tone={badge.tone}>{badge.label}</Pill>
         </div>
       </div>
+
+      {c.status === "ready" && <LoginStatus c={c} onSendLogin={onSendLogin} />}
+      {c.resumeProblem && (
+        <Alert tone="info">
+          Resume not read: {c.resumeProblem} The questions were written from the job description only.
+        </Alert>
+      )}
 
       {c.interruption && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -188,12 +262,14 @@ function Detail({
       )}
 
       <div className="flex flex-wrap gap-2">
-        <a
-          href={`/api/admin/candidates/${encodeURIComponent(c.id)}/resume`}
-          className="inline-flex items-center rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-600 hover:bg-brand-50"
-        >
-          Download resume
-        </a>
+        {c.resume && (
+          <a
+            href={`/api/admin/candidates/${encodeURIComponent(c.id)}/resume`}
+            className="inline-flex items-center rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-600 hover:bg-brand-50"
+          >
+            Download resume
+          </a>
+        )}
         {canReevaluate && (
           <Button variant="ghost" onClick={onReevaluate}>
             Re-run AI evaluation
@@ -207,12 +283,13 @@ function Detail({
         <Button
           variant="ghost"
           onClick={() => {
-            navigator.clipboard.writeText(`${window.location.origin}/interview/${c.id}`);
+            // Candidates with a login use the login page; older ones use their private link.
+            navigator.clipboard.writeText(c.access ? `${window.location.origin}/` : `${window.location.origin}/interview/${c.id}`);
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
           }}
         >
-          {copied ? "Copied ✓" : "Copy interview link"}
+          {copied ? "Copied ✓" : c.access ? "Copy login page link" : "Copy interview link"}
         </Button>
         {onDelete && (
           <Button variant="ghost" onClick={onDelete} className="!border-red-200 !text-red-600 hover:!bg-red-50">
@@ -354,7 +431,8 @@ function Detail({
                 {a && (
                   <div className="mb-3">
                     <p className="mb-1 text-xs font-medium text-slate-500">
-                      Auto transcript{a.transcriptSource === "whisper" && " (Whisper)"} (may contain recognition errors)
+                      Auto transcript{a.transcriptSource === "whisper" && " (Whisper)"}
+                      {a.transcriptSource === "gemini" && " (Gemini)"} (may contain recognition errors)
                     </p>
                     <div className="rounded-md bg-slate-50 p-3 text-sm whitespace-pre-wrap">
                       {a.transcript || <em className="text-slate-400">(no speech detected; watch the video)</em>}

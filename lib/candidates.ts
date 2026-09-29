@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import { evaluateInterview, generateQuestions, resumeToPart, whisperTranscripts } from "./ai";
+import { inviteState, startDeadline } from "./invite-state";
+import { evaluateInterview, generateQuestions, resumeToPart, serverTranscripts } from "./ai";
 import { config } from "./config";
+import { notifyGraded } from "./email";
 import { HttpError } from "./http";
 import { logger, since, who } from "./log";
 import { computeIntegrity } from "./proctoring";
@@ -33,6 +35,8 @@ export function interviewState(c: Candidate): InterviewState {
     awayGraceSeconds: config.awayGraceSeconds,
     maxLookAwayWarnings: config.maxLookAwayWarnings,
     secondPersonGraceSeconds: config.secondPersonGraceSeconds,
+    serverTranscription: config.speechToText !== "off",
+    startBy: startDeadline(c),
   };
 }
 
@@ -55,6 +59,7 @@ export function toSummary(c: Candidate): CandidateSummary {
     scores: c.scores ?? null,
     interrupted: Boolean(c.interruption),
     integrity: computeIntegrity(c.proctoring.events),
+    invite: inviteState(c),
   };
 }
 
@@ -107,15 +112,16 @@ export async function runEvaluation(id: string) {
     if (!c) return;
     elog.info(`${who(c)}: grading ${c.answers.length}/${c.questions.length} answers...`);
 
-    const whisper = await whisperTranscripts(c);
-    if (whisper.size) {
+    const transcripts = await serverTranscripts(c);
+    if (transcripts.size) {
+      const source = config.speechToText === "gemini" ? "gemini" : "whisper";
       const updated = await store.updateCandidate(id, (cand) => {
-        for (const [i, text] of whisper) {
+        for (const [i, text] of transcripts) {
           const a = cand.answers[i];
           if (!a) continue;
           a.browserTranscript ??= a.transcript;
           a.transcript = text;
-          a.transcriptSource = "whisper";
+          a.transcriptSource = source;
         }
       });
       if (!updated) return;
@@ -147,24 +153,26 @@ export async function runEvaluation(id: string) {
       expectedCTC: c.expectedCTC,
       job: c.jobSnapshot,
     });
-    await store.updateCandidate(id, (cand) => {
+    const graded = await store.updateCandidate(id, (cand) => {
       cand.evaluation = evaluation;
       cand.scores = scores;
       cand.status = "completed";
       cand.evaluatedAt = new Date().toISOString();
       delete cand.evaluationError;
     });
+    if (graded) await notifyGraded(graded);
     const perQuestion = evaluation.evaluations.map((e) => e.score).join(", ");
     elog.info(`${who(c)}: done in ${since(start)}. Total ${scores.total} (${scores.recommendation}); answers [${perQuestion}] /10`);
     if (evaluation.proctoringNotes.length) elog.warn(`${who(c)} proctoring: ${evaluation.proctoringNotes.join("; ")}`);
   } catch (err) {
     elog.error(`Grading ${id.slice(0, 8)} failed after ${since(start)}:`, err);
-    await store
+    const failed = await store
       .updateCandidate(id, (cand) => {
         cand.status = "evaluation_failed";
         cand.evaluationError = err instanceof Error ? err.message : String(err);
       })
-      .catch(() => {});
+      .catch(() => null);
+    if (failed) await notifyGraded(failed);
   }
 }
 
@@ -212,15 +220,12 @@ export async function resetForReinterview(id: string, by: string) {
     throw new HttpError(409, "Only finished or interrupted interviews can be reset.");
   }
 
-  const ext = path.extname(c.resume.storedAs);
-  const buffer = await files.get(resumeKey(c.resume.storedAs));
-  const questions = await generateQuestions({
-    job: c.jobSnapshot,
-    candidate: c,
-    resumePart: await resumeToPart(buffer, ext),
-  });
+  const resumePart = c.resume
+    ? await resumeToPart(await files.get(resumeKey(c.resume.storedAs)), path.extname(c.resume.storedAs))
+    : null;
+  const questions = await generateQuestions({ job: c.jobSnapshot, candidate: c, resumePart });
 
-  await store.updateCandidate(id, (cand) => {
+  const updated = await store.updateCandidate(id, (cand) => {
     (cand.attempts ??= []).push({
       archivedAt: new Date().toISOString(),
       archivedBy: by,
@@ -242,6 +247,8 @@ export async function resetForReinterview(id: string, by: string) {
       delete cand[k];
     }
   });
+  if (!updated) throw new HttpError(404, "Candidate not found.");
+  return updated;
 }
 
 export function newSessionId() {

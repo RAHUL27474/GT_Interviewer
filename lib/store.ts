@@ -15,7 +15,7 @@ export const store = {
   async deleteCandidate(id: string) {
     const removed = await db.deleteCandidate(id);
     if (!removed) return false;
-    await files.remove([resumeKey(removed.resume.storedAs)]);
+    if (removed.resume) await files.remove([resumeKey(removed.resume.storedAs)]);
     await files.removePrefix(mediaPrefix(id));
     return true;
   },

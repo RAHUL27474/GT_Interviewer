@@ -8,6 +8,7 @@ const DATA_DIR = path.resolve(/*turbopackIgnore: true*/ process.env.DATA_DIR || 
 const CANDIDATES = "candidates.json";
 const JOBS = "jobs.json";
 const USERS = "users.json";
+const SETTINGS = "settings.json";
 
 async function read<T>(file: string, fallback: T): Promise<T> {
   try {
@@ -64,6 +65,9 @@ export const jsonDb: Db = {
   async getCandidate(id) {
     return (await readCandidates())[id] ?? null;
   },
+  async listCandidatesByEmail(email) {
+    return Object.values(await readCandidates()).filter((c) => c.email === email);
+  },
   async hasApplied(email, jobId) {
     return Object.values(await readCandidates()).some((c) => c.email === email && c.jobId === jobId);
   },
@@ -115,6 +119,16 @@ export const jsonDb: Db = {
       if (i === -1) return false;
       jobs.splice(i, 1);
       return true;
+    });
+  },
+
+  async getSetting<T>(key: string) {
+    return ((await read<Record<string, unknown>>(SETTINGS, {}))[key] as T) ?? null;
+  },
+  setSetting(key, value) {
+    return update<Record<string, unknown>, void>(SETTINGS, {}, (all) => {
+      if (value === null) delete all[key];
+      else all[key] = value;
     });
   },
 };

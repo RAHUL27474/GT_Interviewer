@@ -97,7 +97,7 @@ export function useScreenShare(onStopped: () => void) {
       setError(
         name === "NotAllowedError"
           ? "Screen sharing was cancelled or blocked. Sharing your entire screen is required for this interview."
-          : "Could not start screen sharing. Please try again in Chrome or Edge.",
+          : "Could not start screen sharing. Please try again, ideally in Chrome or Edge.",
       );
       return false;
     }

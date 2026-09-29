@@ -1,0 +1,34 @@
+# One server with everything on it: the app plus PostgreSQL. Files stay on the app's data volume unless S3_BUCKET is
+# set in .env. Start with: docker compose up -d --build
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://interviewer:${POSTGRES_PASSWORD:-change-me}@db:5432/interviewer
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: interviewer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: interviewer
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U interviewer"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  db-data:

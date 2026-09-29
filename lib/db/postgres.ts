@@ -41,6 +41,11 @@ function connect(url: string) {
           position bigserial,
           data jsonb NOT NULL
         )`;
+      await tx`
+        CREATE TABLE IF NOT EXISTS settings (
+          key text PRIMARY KEY,
+          data jsonb NOT NULL
+        )`;
       const [{ count }] = await tx`SELECT count(*)::int AS count FROM jobs`;
       if (count === 0) for (const job of await seedJobs()) await upsertJob(tx, job);
     })
@@ -84,6 +89,10 @@ export function postgresDb(url: string): Db {
     async getCandidate(id) {
       const sql = await db();
       return candidates(await sql`SELECT data FROM candidates WHERE id = ${id}`)[0] ?? null;
+    },
+    async listCandidatesByEmail(email) {
+      const sql = await db();
+      return candidates(await sql`SELECT data FROM candidates WHERE email = ${email} ORDER BY created_at`);
     },
     async hasApplied(email, jobId) {
       const sql = await db();
@@ -147,6 +156,21 @@ export function postgresDb(url: string): Db {
     async deleteJob(id) {
       const sql = await db();
       return (await sql`DELETE FROM jobs WHERE id = ${id} RETURNING id`).length > 0;
+    },
+
+    async getSetting<T>(key: string) {
+      const sql = await db();
+      const [row] = await sql`SELECT data FROM settings WHERE key = ${key}`;
+      return row ? (row.data as T) : null;
+    },
+    async setSetting(key, value) {
+      const sql = await db();
+      if (value === null) await sql`DELETE FROM settings WHERE key = ${key}`;
+      else {
+        await sql`
+          INSERT INTO settings (key, data) VALUES (${key}, ${sql.json(json(value))})
+          ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data`;
+      }
     },
   };
 }

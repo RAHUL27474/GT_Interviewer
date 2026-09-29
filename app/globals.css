@@ -9,6 +9,45 @@
   --color-brand-700: #3040b8;
 }
 
+/**
+ * The type scale, in one place.
+ *
+ * Font sizes alone match Tailwind's defaults, so the four levels exist to carry
+ * the parts that do not: the line heights, the tracking, and the weights. Writing
+ * `text-2xl leading-[1.15] tracking-[-0.02em]` on every heading is how a scale
+ * drifts apart over a year of edits.
+ *
+ *   text-display  24/700, lh 115%, -0.02em   page title
+ *   text-section  16/600, lh 140%, -0.01em   card and sidebar headings
+ *   text-body     14/400, lh 150%           paragraphs, form prose
+ *   text-micro    12/500, lh 145%, +0.04em   labels, tags, inline actions
+ *
+ * Colour is left on the slate scale it already belongs to, so the hexes in the
+ * spec are checkable without a second palette:
+ *   #0F172A slate-900  headings      #475569 slate-600  body
+ *   #1E293B slate-800  sub-headings  #64748B slate-500  microcopy
+ */
+@theme {
+  --text-display: 1.5rem;
+  --text-display--line-height: 1.15;
+  --text-display--letter-spacing: -0.02em;
+  --text-display--font-weight: 700;
+
+  --text-section: 1rem;
+  --text-section--line-height: 1.4;
+  --text-section--letter-spacing: -0.01em;
+  --text-section--font-weight: 600;
+
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.5;
+  --text-body--font-weight: 400;
+
+  --text-micro: 0.75rem;
+  --text-micro--line-height: 1.45;
+  --text-micro--letter-spacing: 0.04em;
+  --text-micro--font-weight: 500;
+}
+
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }

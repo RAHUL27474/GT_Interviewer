@@ -23,6 +23,13 @@ export function parseJob(body: Record<string, unknown>, existing?: Job): Job {
   const postedAt =
     existing?.postedAt ??
     (supplied && !Number.isNaN(Date.parse(supplied)) ? supplied : new Date().toISOString().slice(0, 10));
+  // Both tags are optional, so an admin form that does not carry them must not be
+  // allowed to erase them: an edit that silently dropped a role's experience band
+  // would change the public listing without anyone touching the field.
+  const optStr = (v: unknown, fallback?: string) => {
+    const s = typeof v === "string" ? v.trim() : "";
+    return s || fallback;
+  };
   return {
     id: existing?.id ?? `${slug}-${crypto.randomBytes(3).toString("hex")}`,
     title,
@@ -32,5 +39,55 @@ export function parseJob(body: Record<string, unknown>, existing?: Job): Job {
     salaryMax,
     active: body.active !== false,
     postedAt,
+    employmentType: optStr(body.employmentType, existing?.employmentType),
+    experience: optStr(body.experience, existing?.experience),
   };
+}
+
+/**
+ * schema.org/JobPosting.employmentType as an applicant would read it. Only the
+ * values this app could realistically post are spelled out; anything else is
+ * shown in title case rather than dropped, so an unexpected value on a record is
+ * visible instead of silently rendering as "Full-time".
+ */
+const JOB_EMPLOYMENT_LABELS: Record<string, string> = {
+  FULL_TIME: "Full-time",
+  PART_TIME: "Part-time",
+  CONTRACTOR: "Contract",
+  TEMPORARY: "Temporary",
+  INTERN: "Internship",
+  VOLUNTEER: "Volunteer",
+  PER_DIEM: "Per diem",
+};
+
+/**
+ * The two metadata chips under a role's title on the apply card.
+ *
+ * `experience` is stored on the record when the role has it, and otherwise read
+ * back out of the description, because every role this app has posted states its
+ * band in the requirements ("1-3 years of hands-on experience"). Regex rather
+ * than a stored field alone, so a role written before the field existed still
+ * gets a chip instead of a bare card.
+ *
+ * `employmentType` is a label lookup. Nothing here has ever been part-time or
+ * contract, so an *absent* value means full-time; an unrecognised value is shown
+ * in title case rather than dropped, so a surprising record is visible on the
+ * page instead of quietly reading "Full-time".
+ */
+export function jobTags(job: Pick<Job, "description" | "employmentType" | "experience">): {
+  employment: string;
+  experience: string | null;
+} {
+  const experience =
+    job.experience?.trim() ||
+    // "2-5 years", "0-2 years", "up to 3 years", "3+ years"
+    job.description.match(/(\d+\s*(?:-|–|to)\s*\d+|\d+\s*\+|\d+)\s*\+?\s*years?/i)?.[0]?.replace(/\s+/g, " ") ||
+    null;
+
+  const raw = job.employmentType?.trim() ?? "";
+  const employment = raw
+    ? (JOB_EMPLOYMENT_LABELS[raw.toUpperCase()] ??
+      raw.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase()))
+    : "Full-time";
+  return { employment, experience };
 }

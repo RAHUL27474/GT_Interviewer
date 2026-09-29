@@ -15,9 +15,18 @@ export interface Job {
    * aggregators on every tweak.
    */
   postedAt?: string;
+  /**
+   * schema.org/JobPosting.employmentType, e.g. "FULL_TIME". Optional because
+   * records written before these tags existed have no value, and every role this
+   * app has ever posted has been full-time, so nothing was lost by not storing
+   * it. The apply card falls back to "Full-time" when it is absent.
+   */
+  employmentType?: string;
+  /** Human-readable experience band, e.g. "0-2 years". See `jobTags` in lib/jobs. */
+  experience?: string;
 }
 
-export type PublicJob = Pick<Job, "id" | "title" | "location" | "description">;
+export type PublicJob = Pick<Job, "id" | "title" | "location" | "description" | "employmentType" | "experience">;
 
 export interface Question {
   question: string;

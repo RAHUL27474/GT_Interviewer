@@ -101,7 +101,7 @@ export function ResumeScreeningPanel({ report }: { report: ResumeScreeningReport
         Scored by {ENGINE_LABEL[report.engine]}
         {report.extractionMethod ? ` · resume text via ${report.extractionMethod}` : ""}
         {" · shortlist at "}
-        {scores.threshold}, review floor at {scores.reviewThreshold}
+        {scores.threshold}
       </p>
 
       <p className="mt-2 text-sm text-slate-700">{report.summary}</p>

@@ -32,6 +32,7 @@ import { assert, suite } from "./test-harness";
 const { test, done } = suite("store");
 
 const CANDIDATES_FILE = path.join(process.cwd(), "data", "candidates.json");
+const JOBS_FILE = path.join(process.cwd(), "data", "jobs.json");
 const BOM = "\uFEFF";
 
 /** A record with every field the store and `upgrade()` read. */
@@ -154,6 +155,31 @@ async function main(): Promise<void> {
     await withStoreFile(`${BOM}{ this is not json`, async () => {
       await assert.rejects(() => store.listCandidates(), /JSON/i);
     });
+  });
+
+  console.log("\n4. A cold start seeds the job list exactly once");
+  // Regression test for a live Render failure. Every deploy starts a cold
+  // container with no data/jobs.json, and the first page views arrive together.
+  // Each one read ENOENT and seeded, all writing one shared "jobs.json.tmp":
+  // the first rename consumed it and the rest failed with ENOENT, 500-ing the
+  // careers page on every cold start.
+  await test("concurrent cold-start reads all get the seed, and no temp file is left", async () => {
+    const jobsBackup = await fs.readFile(JOBS_FILE, "utf8").catch(() => null);
+    try {
+      await fs.rm(JOBS_FILE, { force: true });
+      // Concurrent, not sequential: the bug needs them to overlap.
+      const results = await Promise.all(Array.from({ length: 8 }, () => store.listJobs()));
+      for (const jobs of results) {
+        assert.ok(jobs.length > 0, "every concurrent reader should get the seeded jobs");
+      }
+      const onDisk = JSON.parse(await fs.readFile(JOBS_FILE, "utf8"));
+      assert.equal(onDisk.length, results[0].length, "the seeded file should match what was returned");
+      const leftovers = (await fs.readdir(path.dirname(JOBS_FILE))).filter((f) => f.endsWith(".tmp"));
+      assert.deepEqual(leftovers, [], "a failed write must not leave a temp file behind");
+    } finally {
+      if (jobsBackup === null) await fs.rm(JOBS_FILE, { force: true });
+      else await fs.writeFile(JOBS_FILE, jobsBackup, "utf8");
+    }
   });
 
   done();

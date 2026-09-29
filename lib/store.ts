@@ -1,5 +1,7 @@
 // Tiny JSON-file store. Good for a few thousand candidates; swap for a real DB beyond that.
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { config } from "./config";
 import { getDatabasePool } from "./database";
@@ -31,32 +33,78 @@ async function read<T>(file: string, fallback: T): Promise<T> {
 async function write(file: string, data: unknown) {
   await fs.mkdir(DATA_DIR, { recursive: true });
   const target = path.join(DATA_DIR, file);
-  const tmp = `${target}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fs.rename(tmp, target);
+  // A unique temp name per write, not one shared "<file>.tmp".
+  //
+  // The shared name is a race: two writers both create the same temp file, the
+  // first rename consumes it, and the second rename fails with ENOENT because the
+  // file it is renaming is already gone. `readJobs` used to do exactly that on a
+  // cold start, where every concurrent request seeds at once. On Render the
+  // container is always cold, so it was not a rare edge case but every deploy.
+  const tmp = `${target}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+    await fs.rename(tmp, target);
+  } catch (err) {
+    // Never leave a partial temp file behind for the next write to trip over.
+    await fs.rm(tmp, { force: true });
+    throw err;
+  }
 }
 
 // Serialize every read-modify-write so concurrent requests can't overwrite each other.
 // Kept on globalThis so all route bundles share one queue.
 const g = globalThis as unknown as { __storeQueue?: Promise<unknown> };
-function update<T, R>(file: string, fallback: T, fn: (data: T) => R | Promise<R>): Promise<R> {
+/**
+ * Run a serialized read-modify-write against one file.
+ *
+ * `fn` receives the current value and returns the caller's result. Normally what
+ * gets written back is that same value, mutated in place by `fn`. Pass `replace`
+ * when the callback could not mutate in place and returns the value to store
+ * instead, which is how a missing file gets seeded: there is nothing on disk to
+ * mutate, so the callback has to hand back what should be written.
+ */
+function update<T, R>(
+  file: string,
+  fallback: T,
+  fn: (data: T) => R | Promise<R>,
+  replace = false,
+): Promise<R> {
   const run = (g.__storeQueue ?? Promise.resolve()).then(async () => {
     const data = await read(file, fallback);
     const result = await fn(data);
-    await write(file, data);
+    await write(file, replace ? result : data);
     return result;
   });
   g.__storeQueue = run.catch(() => {});
   return run;
 }
 
+/**
+ * The job list, seeded from config on first run.
+ *
+ * The seed goes through the same `update` queue as every other write. Reading
+ * outside it and writing inside it is what made a cold start fail: a container
+ * with no `data/jobs.json` sends several requests at once, and each one read
+ * ENOENT and tried to seed, so N requests raced to write one file. On a long
+ * lived server the window is tiny. On Render the container is cold on every
+ * deploy and every spin-down, so the first page view after each one hit it.
+ */
 async function readJobs(): Promise<Job[]> {
   const jobs = await read<Job[] | null>(JOBS, null);
   if (jobs) return jobs;
-  // First run: seed from config.
-  const seed: Job[] = JSON.parse(await fs.readFile(path.join(process.cwd(), "config/jobs.seed.json"), "utf8"));
-  await write(JOBS, seed);
-  return seed;
+  return update<Job[] | null, Job[]>(
+    JOBS,
+    null,
+    (current) => {
+      // Re-read inside the queue: a request that queued behind this one may have
+      // already seeded it, and re-seeding would drop any job saved since.
+      if (current) return current;
+      return JSON.parse(
+        fsSync.readFileSync(path.join(process.cwd(), "config/jobs.seed.json"), "utf8"),
+      ) as Job[];
+    },
+    true,
+  );
 }
 
 /**

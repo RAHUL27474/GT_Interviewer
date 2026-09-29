@@ -1,8 +1,8 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { requireStaff } from "@/lib/auth";
+import { files, resumeKey } from "@/lib/files";
 import { handler, HttpError } from "@/lib/http";
-import { RESUME_DIR, store } from "@/lib/store";
+import { store } from "@/lib/store";
 
 const MIME: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -14,8 +14,10 @@ export const GET = handler(async (_request: Request, ctx: { params: Promise<{ id
   await requireStaff();
   const c = await store.getCandidate((await ctx.params).id);
   if (!c) throw new HttpError(404, "Candidate not found.");
-  const data = await fs.readFile(path.join(RESUME_DIR, c.resume.storedAs));
-  return new Response(data, {
+  const data = await files.get(resumeKey(c.resume.storedAs)).catch(() => {
+    throw new HttpError(404, "Resume file not found.");
+  });
+  return new Response(new Uint8Array(data), {
     headers: {
       "Content-Type": MIME[path.extname(c.resume.storedAs)] ?? "application/octet-stream",
       "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(c.resume.fileName)}`,

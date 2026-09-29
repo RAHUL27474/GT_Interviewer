@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { evaluateInterview, generateQuestions, resumeToPart, whisperTranscripts } from "./ai";
 import { config } from "./config";
@@ -7,7 +6,8 @@ import { HttpError } from "./http";
 import { logger, since, who } from "./log";
 import { computeIntegrity } from "./proctoring";
 import { computeScores } from "./scoring";
-import { RESUME_DIR, store } from "./store";
+import { files, mediaPrefix, resumeKey } from "./files";
+import { store } from "./store";
 import type { Candidate, CandidateSummary, Evaluation, InterviewState } from "./types";
 
 const log = logger("interview");
@@ -89,8 +89,8 @@ export async function interruptInterview(id: string, reason: string): Promise<bo
 /** Auto-submits in-progress interviews whose browser stopped sending heartbeats (closed, crashed, offline). */
 export async function sweepStaleInterviews() {
   const cutoff = Date.now() - config.heartbeatTimeoutSec * 1000;
-  const stale = (await store.listCandidates()).filter(
-    (c) => c.status === "in_progress" && new Date(c.lastSeenAt ?? c.startedAt ?? 0).getTime() < cutoff,
+  const stale = (await store.listCandidatesByStatus("in_progress")).filter(
+    (c) => new Date(c.lastSeenAt ?? c.startedAt ?? 0).getTime() < cutoff,
   );
   for (const c of stale) {
     if (await interruptInterview(c.id, "Connection lost or the interview window was closed")) await runEvaluation(c.id);
@@ -168,9 +168,36 @@ export async function runEvaluation(id: string) {
   }
 }
 
+/** When a finished interview's media will be deleted, or null if it's kept (not finished, or retention off). */
+export function mediaDeletesOn(c: Candidate): Date | null {
+  if (!config.mediaRetentionDays || c.mediaDeletedAt || !c.completedAt) return null;
+  if (c.status !== "completed" && c.status !== "evaluation_failed") return null;
+  return new Date(new Date(c.completedAt).getTime() + config.mediaRetentionDays * 86_400_000);
+}
+
+/**
+ * Deletes answer videos, snapshots and screen recordings of interviews that ended more than
+ * MEDIA_RETENTION_DAYS ago. Resumes, transcripts, scores and the proctoring timeline are kept.
+ */
+export async function purgeOldMedia() {
+  const now = Date.now();
+  const due = (await store.listCandidatesByStatus("completed", "evaluation_failed")).filter((c) => {
+    const on = mediaDeletesOn(c);
+    return on !== null && on.getTime() <= now;
+  });
+  for (const c of due) {
+    await files.removePrefix(mediaPrefix(c.id));
+    await store.updateCandidate(c.id, (cand) => {
+      cand.mediaDeletedAt = new Date().toISOString();
+    });
+    log.info(`${who(c)}: videos and snapshots deleted (${config.mediaRetentionDays}-day retention)`);
+  }
+  return due.length;
+}
+
 /** Restarts evaluations that were interrupted by a server restart. */
 export async function resumePendingEvaluations() {
-  const pending = (await store.listCandidates()).filter((c) => c.status === "evaluating");
+  const pending = await store.listCandidatesByStatus("evaluating");
   await Promise.all(pending.map((c) => runEvaluation(c.id)));
 }
 
@@ -186,7 +213,7 @@ export async function resetForReinterview(id: string, by: string) {
   }
 
   const ext = path.extname(c.resume.storedAs);
-  const buffer = await fs.readFile(path.join(RESUME_DIR, c.resume.storedAs));
+  const buffer = await files.get(resumeKey(c.resume.storedAs));
   const questions = await generateQuestions({
     job: c.jobSnapshot,
     candidate: c,
@@ -211,7 +238,7 @@ export async function resetForReinterview(id: string, by: string) {
     cand.answers = [];
     cand.proctoring = { events: [] };
     cand.status = "ready";
-    for (const k of ["startedAt", "completedAt", "evaluatedAt", "interruption", "evaluation", "scores", "evaluationError", "sessionId", "lastSeenAt", "screenRecording"] as const) {
+    for (const k of ["startedAt", "completedAt", "evaluatedAt", "interruption", "evaluation", "scores", "evaluationError", "sessionId", "lastSeenAt", "screenRecording", "mediaDeletedAt"] as const) {
       delete cand[k];
     }
   });

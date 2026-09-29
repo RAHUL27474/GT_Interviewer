@@ -11,15 +11,18 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "postinstall": "node scripts/copy-mediapipe.mjs"
+    "postinstall": "node scripts/copy-mediapipe.mjs",
+    "migrate": "tsx --env-file=.env scripts/migrate-to-cloud.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
+    "@aws-sdk/client-s3": "^3.1142.0",
     "@google/genai": "^2.24.0",
     "@mediapipe/tasks-vision": "^1.0.1",
     "@vladmandic/face-api": "^1.7.15",
     "mammoth": "^1.12.3",
     "next": "^16.3.6",
+    "postgres": "^3.4.9",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "unpdf": "^1.8.1"
@@ -30,6 +33,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
 }

@@ -46,7 +46,8 @@ components/                 React client components (form, interview, dashboard)
 lib/
   claude.ts                 Question generation and answer grading (Claude API)
   scoring.ts                Scoring rules: edit the numbers here
-  store.ts                  JSON-file storage in data/
+  store.ts                  Records: PostgreSQL (lib/db/postgres.ts) or JSON files (lib/db/json.ts)
+  files.ts                  Files: S3-compatible bucket or the local data/ folder
   auth.ts                   Admin cookie session
 config/jobs.seed.json       Starting jobs (copied to data/jobs.json on first run)
 ```
@@ -71,6 +72,7 @@ Runs in the candidate's browser (`components/interview/useProctor.ts`). Google M
 |---|---|
 | Face missing | No face for more than 3 s |
 | More than one person | 2+ faces for more than 1 s |
+| Different person | Face recognition (face-api) enrolls the candidate at the start; a different face for ~4.5 s |
 | Looking away | Head turned or tilted for more than 3 s |
 | Phone in view | Detected in 2 checks in a row |
 | Left window / tab | Window blur or tab hidden |
@@ -83,6 +85,7 @@ Runs in the candidate's browser (`components/interview/useProctor.ts`). Google M
 **Camera rules** (`MAX_LOOK_AWAY_WARNINGS`, `SECOND_PERSON_GRACE_SECONDS`):
 - **Looking away:** head turned away for 3 seconds or more counts once. The first 2 times are warnings, and the 3rd ends the interview.
 - **Another person on camera:** the first time starts a 5-second countdown, and the interview ends if they're still visible at 0. Any second appearance ends it immediately.
+- **Different person in the candidate's place:** same as above, but the countdown only stops when the original candidate's face is recognised again.
 
 A look-away only counts again after the candidate has looked back for 2 seconds or more, so one long glance counts once.
 
@@ -109,6 +112,17 @@ Each job's salary budget is set in the dashboard's Jobs tab and is never sent to
 
 ## Data
 
-Everything is stored in `data/`: `candidates.json`, `jobs.json`, `resumes/` and `videos/<candidate-id>/` (about 5 MB per minute of answer video). Back this folder up. The JSON store needs a normal Node server (`npm start`, a VPS, or Docker). On serverless hosting such as Vercel, swap `lib/store.ts` for a database.
+Two settings decide where data lives; both are optional for local testing:
+
+| | Set | Not set (local testing) |
+|---|---|---|
+| Records: candidates, jobs, staff | `DATABASE_URL`: PostgreSQL (Neon, Supabase, Railway…). Tables are created on first start. | JSON files in `data/` |
+| Files: resumes, answer videos, snapshots, screen recordings | `S3_BUCKET` + `S3_ENDPOINT` / keys: any S3-compatible bucket (Cloudflare R2, AWS S3…). Keep it private. | `data/resumes/`, `data/videos/<candidate-id>/` |
+
+Answer video is about 5 MB per minute and screen recording about 2 MB per minute, so budget roughly 30–40 MB of storage per completed interview.
+
+**Moving local data to the cloud:** fill in `DATABASE_URL` (and the `S3_*` settings) in `.env`, then run `npm run migrate`. It copies jobs, staff accounts, candidates and all files; running it again skips candidates already copied. The local `data/` folder is left untouched.
+
+With both set, the app keeps nothing on its own disk, so it runs on any Node host and on several servers at once (updates lock the database row).
 #   G T _ I n t e r v i e w e r  
  

@@ -104,12 +104,17 @@ export interface ProctorEvent {
 
 /** One continuous screen recording; a new segment starts each time the candidate re-shares. */
 export interface ScreenSegment {
-  /** File in data/videos/<candidateId>/ */
+  /** Name under videos/<candidateId>/. Chunks are stored as `<file>.part<seq>` (see screenChunkName). */
   file: string;
   startedAt: string;
   chunks: number;
   bytes: number;
+  /** Size of each chunk. Missing on recordings saved before cloud storage: those are one appended file. */
+  chunkBytes?: number[];
 }
+
+/** Stored name of one screen-recording chunk. */
+export const screenChunkName = (file: string, seq: number) => `${file}.part${seq}`;
 
 export interface IntegritySummary {
   level: "low" | "medium" | "high";
@@ -164,6 +169,10 @@ export interface Candidate extends CandidateProfile {
   lastSeenAt?: string;
   /** Set when the interview stopped midway and was auto-submitted. */
   interruption?: { at: string; reason: string; answeredCount: number };
+  /** When the videos, snapshots and screen recordings were deleted under MEDIA_RETENTION_DAYS. */
+  mediaDeletedAt?: string;
+  /** Sent to the dashboard only: when the media will be deleted automatically. */
+  mediaDeletesOn?: string;
   /** Earlier attempts, kept for audit when HR allows a re-interview. */
   attempts?: PreviousAttempt[];
   startedAt?: string;

@@ -1,4 +1,5 @@
 import { requireManager, requireStaff } from "@/lib/auth";
+import { mediaDeletesOn } from "@/lib/candidates";
 import { handler, HttpError } from "@/lib/http";
 import { store } from "@/lib/store";
 import { visibleCandidate } from "@/lib/visibility";
@@ -7,7 +8,8 @@ export const GET = handler(async (_request: Request, ctx: { params: Promise<{ id
   const me = await requireStaff();
   const candidate = await store.getCandidate((await ctx.params).id);
   if (!candidate) throw new HttpError(404, "Candidate not found.");
-  return Response.json(await visibleCandidate(me, candidate));
+  const deletesOn = mediaDeletesOn(candidate);
+  return Response.json({ ...(await visibleCandidate(me, candidate)), mediaDeletesOn: deletesOn?.toISOString() });
 });
 
 /** Manager only: permanently deletes the candidate, their resume and all interview recordings. */

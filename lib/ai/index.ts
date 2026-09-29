@@ -1,10 +1,9 @@
 // Interview prompts and schemas, shared by every AI provider.
 // The provider is chosen in lib/config.ts (AI_PROVIDER, or auto-detected from which API key is set).
 import mammoth from "mammoth";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config";
-import { mediaDir } from "../store";
+import { files, mediaKey } from "../files";
 import type { Candidate, CandidateProfile, Evaluation, Job, Question } from "../types";
 import { claudeStructured } from "./claude";
 import { geminiStructured } from "./gemini";
@@ -48,7 +47,7 @@ const VIDEO_MIME: Record<string, string> = { ".webm": "audio/webm", ".mp4": "aud
 export async function whisperTranscripts(candidate: Candidate): Promise<Map<number, string>> {
   const result = new Map<number, string>();
   if (config.aiProvider !== "hf" || !config.hfWhisper) return result;
-  const dir = mediaDir(candidate.id);
+
   const wlog = logger("whisper");
   for (const [i, a] of candidate.answers.entries()) {
     if (a.transcriptSource === "whisper") continue;
@@ -58,7 +57,7 @@ export async function whisperTranscripts(candidate: Candidate): Promise<Map<numb
     }
     const start = Date.now();
     try {
-      const data = await fs.readFile(path.join(dir, a.video));
+      const data = await files.get(mediaKey(candidate.id, a.video));
       const text = await hfTranscribe(data, VIDEO_MIME[path.extname(a.video)] ?? "audio/webm");
       const mb = (data.length / 1024 / 1024).toFixed(1);
       if (text) {
@@ -194,7 +193,6 @@ export async function evaluateInterview(candidate: Candidate): Promise<Evaluatio
     return mockEvaluation(candidate);
   }
   const job = candidate.jobSnapshot;
-  const dir = mediaDir(candidate.id);
 
   const parts: Part[] = [
     {
@@ -231,7 +229,7 @@ ${!a ? "(not answered: the interview was interrupted)" : a.transcript.trim() || 
     if (snaps.length) {
       parts.push({ kind: "text", text: `Webcam snapshots during answer ${i + 1}:` });
       for (const name of snaps) {
-        const data = await fs.readFile(path.join(dir, name)).catch(() => null);
+        const data = await files.get(mediaKey(candidate.id, name)).catch(() => null);
         if (data) {
           parts.push({ kind: "image", base64: data.toString("base64") });
         }

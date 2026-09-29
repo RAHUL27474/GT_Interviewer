@@ -147,6 +147,8 @@ function Detail({
     ["Previous attempts", c.attempts?.length ?? 0],
   ];
   const media = (file: string) => `/api/admin/candidates/${encodeURIComponent(c.id)}/media/${encodeURIComponent(file)}`;
+  const mediaGone = Boolean(c.mediaDeletedAt);
+  const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
   return (
     <div className="space-y-6">
@@ -230,7 +232,18 @@ function Detail({
 
       <div>
         <h3 className="mb-2 font-semibold">Screen recording</h3>
-        {c.screenRecording?.segments.length ? (
+        {mediaGone && (
+          <p className="mb-2 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-600">
+            Videos, snapshots and the screen recording were deleted automatically on {day(c.mediaDeletedAt!)}. The
+            transcripts, scores and proctoring timeline are kept.
+          </p>
+        )}
+        {!mediaGone && c.mediaDeletesOn && (
+          <p className="mb-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Videos, snapshots and the screen recording will be deleted automatically on {day(c.mediaDeletesOn)}.
+          </p>
+        )}
+        {mediaGone ? null : c.screenRecording?.segments.length ? (
           <div className="space-y-3">
             {c.screenRecording.segments.map((seg, i) => (
               <div key={seg.file}>
@@ -277,7 +290,7 @@ function Detail({
                       {e.questionIndex !== null && ` · Q${e.questionIndex + 1}`} · {e.detail}
                     </span>
                   </div>
-                  {e.snapshot && (
+                  {e.snapshot && !mediaGone && (
                     <a href={media(e.snapshot)} target="_blank" rel="noopener noreferrer">
                       <img src={media(e.snapshot)} alt="Snapshot at event" className="h-12 rounded border border-slate-200" />
                     </a>
@@ -330,7 +343,7 @@ function Detail({
                   {a && ` · ${Math.round((a.timeTakenSec / 60) * 10) / 10} min`}
                 </p>
                 {!a && <p className="my-3 text-sm text-slate-400 italic">Not answered yet</p>}
-                {a?.video && (
+                {a?.video && !mediaGone && (
                   <video
                     src={media(a.video)}
                     controls
@@ -348,7 +361,7 @@ function Detail({
                     </div>
                   </div>
                 )}
-                {a && a.snapshots.length > 0 && (
+                {a && a.snapshots.length > 0 && !mediaGone && (
                   <div className="mb-3 flex gap-2">
                     {a.snapshots.map((s) => (
                       <img key={s} src={media(s)} alt="Webcam snapshot" className="h-16 rounded border border-slate-200" />

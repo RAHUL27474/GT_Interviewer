@@ -1,12 +1,12 @@
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { generateQuestions, resumeToPart } from "@/lib/ai";
 import { config } from "@/lib/config";
+import { files, resumeKey } from "@/lib/files";
 import { handler, HttpError } from "@/lib/http";
 import { logger, who } from "@/lib/log";
 import { JOINING_OPTIONS } from "@/lib/scoring";
-import { RESUME_DIR, store } from "@/lib/store";
+import { store } from "@/lib/store";
 import type { Candidate, CandidateProfile } from "@/lib/types";
 
 export const maxDuration = 300;
@@ -59,8 +59,9 @@ export const POST = handler(async (request: Request) => {
   const job = (await store.listJobs()).find((j) => j.id === profile.jobId && j.active);
   if (!job) throw new HttpError(400, "This position is no longer open.");
 
-  const duplicate = (await store.listCandidates()).some((c) => c.email === profile.email && c.jobId === job.id);
-  if (duplicate) throw new HttpError(409, "You have already applied for this position with this email.");
+  if (await store.hasApplied(profile.email, job.id)) {
+    throw new HttpError(409, "You have already applied for this position with this email.");
+  }
 
   const buffer = Buffer.from(await file.arrayBuffer());
   log.info(`${profile.fullName} applied for "${job.title}" (resume ${ext}, ${(file.size / 1024).toFixed(0)} KB)`);
@@ -73,8 +74,7 @@ export const POST = handler(async (request: Request) => {
   }
 
   const id = crypto.randomUUID();
-  await fs.mkdir(RESUME_DIR, { recursive: true });
-  await fs.writeFile(path.join(RESUME_DIR, id + ext), buffer);
+  await files.put(resumeKey(id + ext), buffer, file.type || undefined);
 
   const candidate: Candidate = {
     id,

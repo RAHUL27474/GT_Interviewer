@@ -33,6 +33,11 @@ export const config = {
   maxProctorEvents: 300,
   /** Deactivated staff accounts are deleted automatically after this many days. */
   accountDeleteAfterDays: Number(process.env.ACCOUNT_DELETE_AFTER_DAYS || 15),
+  /**
+   * Answer videos, snapshots and screen recordings are deleted this many days after the interview ends
+   * (resumes, transcripts and scores are kept). 0 keeps them forever.
+   */
+  mediaRetentionDays: Number(process.env.MEDIA_RETENTION_DAYS?.trim() || 15),
   /** One screen-recording chunk (~10 s at low bitrate is well under this). */
   maxScreenChunkBytes: 20 * 1024 * 1024,
   /** Password for the first account (Super Admin), created automatically on a fresh install. */

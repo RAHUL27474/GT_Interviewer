@@ -1,14 +1,14 @@
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { assertActiveSession } from "@/lib/candidates";
 import { config } from "@/lib/config";
+import { files, mediaKey } from "@/lib/files";
 import { handler, HttpError } from "@/lib/http";
-import { mediaDir, store } from "@/lib/store";
+import { store } from "@/lib/store";
+import { screenChunkName } from "@/lib/types";
 
 /**
- * Receives the screen recording in ~10 s chunks while the interview runs, appending each to its
- * segment's file. Chunks of one segment arrive in order (seq 0, 1, 2…); a new segment starts each
+ * Receives the screen recording in ~10 s chunks while the interview runs, storing each as its own file
+ * (played back as one video by the media route). Chunks of one segment arrive in order (seq 0, 1, 2…); a new segment starts each
  * time the candidate re-shares their screen. Uploading as we go means an interrupted interview
  * still keeps its screen recording up to that point.
  */
@@ -26,8 +26,6 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
   }
   if (chunk.size > config.maxScreenChunkBytes) throw new HttpError(400, "Screen chunk too large.");
   const data = Buffer.from(await chunk.arrayBuffer());
-  const dir = mediaDir(id);
-  await fs.mkdir(dir, { recursive: true });
 
   let duplicate = false;
   const updated = await store.updateCandidate(id, async (c) => {
@@ -39,6 +37,7 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
         startedAt: new Date().toISOString(),
         chunks: 0,
         bytes: 0,
+        chunkBytes: [],
       });
     }
     const seg = segments[segment];
@@ -48,10 +47,11 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
       return;
     }
     if (seq > seg.chunks) throw new HttpError(409, "Screen chunk out of order.");
-    // Appended under the store lock, so chunks can never interleave.
-    await fs.appendFile(path.join(/*turbopackIgnore: true*/ dir, seg.file), data);
+    // Each chunk is its own file (buckets can't append); saved under the record lock so they stay in order.
+    await files.put(mediaKey(id, screenChunkName(seg.file, seq)), data, "video/webm");
     seg.chunks += 1;
     seg.bytes += data.length;
+    (seg.chunkBytes ??= []).push(data.length);
   });
   if (!updated) throw new HttpError(404, "Interview not found.");
   return Response.json({ ok: true, duplicate });

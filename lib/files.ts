@@ -64,6 +64,9 @@ function s3Driver(bucket: string): Driver {
     region: process.env.S3_REGION || "auto",
     endpoint: process.env.S3_ENDPOINT || undefined,
     forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
+    // Newer AWS SDKs add CRC checksums to every request, which Backblaze B2 and Cloudflare R2 reject.
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
     credentials: {
       accessKeyId: process.env.S3_ACCESS_KEY_ID || "",
       secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",

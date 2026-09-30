@@ -7,7 +7,7 @@ import { generateQuestions, resumeToPart, screenResume } from "./ai";
 import { config } from "./config";
 import { files, resumeKey } from "./files";
 import { driveDownload, googleConnection, GoogleError } from "./google";
-import { findUploadQuestion, type FormResponse, listResponses, type UploadedFile, uploadedFile } from "./google-forms";
+import { ensureResumeLinkQuestion, type FormResponse, listResponses, type UploadedFile, uploadedFile } from "./google-forms";
 import { logger, who } from "./log";
 import { detectType, driveFileId, type FetchedResume, fetchResume, ResumeLinkError } from "./resume-link";
 import { decide, screeningRules } from "./screening";
@@ -111,7 +111,7 @@ async function intakeResponse(job: Job, form: GoogleJobForm, r: FormResponse, sk
   let resumePart = null;
   const upload = uploadedFile(r, form.uploadQuestionId);
   if (!upload && !resumeUrl) {
-    resumeProblem = "No resume was uploaded.";
+    resumeProblem = "No resume link was given.";
   } else {
     try {
       const fetched = await getResume(upload, resumeUrl);
@@ -183,6 +183,9 @@ async function saveForm(jobId: string, patch: Partial<GoogleJobForm>, skipped: G
   await store.saveJob({ ...job, googleForm: { ...job.googleForm, ...patch, skipped: all } });
 }
 
+/** Forms checked for the resume link question since this server started. */
+const verifiedForms = new Set<string>();
+
 /** Reads one job's new responses. */
 export async function syncJob(job: Job) {
   if (!job.googleForm) return;
@@ -194,13 +197,10 @@ export async function syncJob(job: Job) {
   };
   let syncedUntil = form.syncedUntil;
   try {
-    // The resume upload question is added by hand in Google Forms; look for it until it's there.
-    if (!form.uploadQuestionId) {
-      const found = await findUploadQuestion(form.formId);
-      if (found) {
-        form.uploadQuestionId = found;
-        log.info(`"${job.title}": resume upload question found`);
-      }
+    // Once per server start: the form must still ask for the resume link (re-added if someone deleted it).
+    if (!verifiedForms.has(form.formId)) {
+      form.questionIds = { ...form.questionIds, resumeUrl: await ensureResumeLinkQuestion(form) };
+      verifiedForms.add(form.formId);
     }
     const responses = await listResponses(form.formId, form.syncedUntil);
     for (const r of responses) {
@@ -209,7 +209,7 @@ export async function syncJob(job: Job) {
     }
     await saveForm(
       job.id,
-      { syncedUntil, uploadQuestionId: form.uploadQuestionId, lastCheckedAt: new Date().toISOString(), lastError: undefined },
+      { syncedUntil, questionIds: form.questionIds, lastCheckedAt: new Date().toISOString(), lastError: undefined },
       skipped,
     );
   } catch (err) {
@@ -217,7 +217,7 @@ export async function syncJob(job: Job) {
     log.error(`"${job.title}" form check failed:`, err);
     await saveForm(
       job.id,
-      { syncedUntil, uploadQuestionId: form.uploadQuestionId, lastCheckedAt: new Date().toISOString(), lastError: message },
+      { syncedUntil, questionIds: form.questionIds, lastCheckedAt: new Date().toISOString(), lastError: message },
       skipped,
     );
   }

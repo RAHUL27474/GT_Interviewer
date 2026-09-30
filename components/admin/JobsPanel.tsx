@@ -103,7 +103,7 @@ function GoogleCard({ google }: { google: GoogleStatus }) {
               {!connection.canReadDrive && (
                 <p className="mt-1 font-medium text-warn-fg">
                   ⚠ Click <strong>Switch account</strong> and connect the same account again, allowing Google Drive access,
-                  so the app can read the resumes applicants upload.
+                  so the app can download resume links through Google Drive.
                 </p>
               )}
             </>
@@ -254,18 +254,6 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
         <div className="mt-3">
           <Alert>{error}</Alert>
         </div>
-      )}
-      {form && !form.uploadQuestionId && (
-        <details className="mt-3 rounded-lg bg-warn-soft px-3 py-2 text-sm text-warn-fg">
-          <summary className="cursor-pointer">
-            ⚠ The form has no resume upload question yet. <span className="underline">How?</span>
-          </summary>
-          <p className="mt-2">
-            Click <strong>Edit in Google Forms</strong> → <strong>+</strong> → type <strong>File upload</strong> → allow
-            PDF and Document, 10 MB, <strong>Required</strong>. Delete any old &quot;Link to your resume&quot; question.
-            The app finds it by itself within a few minutes. Applicants will need a Google account to upload.
-          </p>
-        </details>
       )}
       {form && (
         <div className="mt-3 space-y-1 text-xs text-fg-3">

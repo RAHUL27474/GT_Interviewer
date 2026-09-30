@@ -17,6 +17,14 @@ interface FieldSpec {
   choices?: string[];
 }
 
+const RESUME_LINK_FIELD: FieldSpec = {
+  key: "resumeUrl",
+  title: "Link to your resume",
+  description:
+    'Upload your resume (PDF or Word) to Google Drive, set sharing to "Anyone with the link", and paste the link here.',
+  required: true,
+};
+
 /** The application questions, in form order. Email is added only if the form can't collect it itself. */
 export const FORM_FIELDS: FieldSpec[] = [
   { key: "fullName", title: "Full name", required: true },
@@ -26,9 +34,8 @@ export const FORM_FIELDS: FieldSpec[] = [
   { key: "currentCTC", title: "Current CTC (₹ lakhs per year)", description: "A number, e.g. 4.5. Enter 0 if you are a fresher.", required: true },
   { key: "expectedCTC", title: "Expected CTC (₹ lakhs per year)", description: "A number, e.g. 6", required: true },
   { key: "joiningCategory", title: "When can you join?", required: true, choices: JOINING_OPTIONS.map((o) => o.label) },
+  RESUME_LINK_FIELD,
   { key: "linkedin", title: "LinkedIn profile", required: false },
-  // The resume itself is a "File upload" question, which Google only lets you add in the Forms editor
-  // (the API can't create one). The app finds it by itself: see findUploadQuestion.
 ];
 
 const EMAIL_FIELD: FieldSpec = { key: "email", title: "Email address", description: "Your interview login details will be sent here.", required: true };
@@ -42,7 +49,7 @@ function formDescription(job: Pick<Job, "location" | "description">) {
     job.location ? `Location: ${job.location}` : "",
     job.description,
     "—",
-    "Please upload your resume (PDF or Word) in the last question of this form.",
+    'Please share your resume as a Google Drive link (sharing: "Anyone with the link").',
     "How it works: you'll get an email confirming your application straight away. " +
       `We then review your resume, and${delay ? ` within about ${delay < 60 ? `${delay} minutes` : `${Math.round(delay / 60)} hour(s)`}` : ""} ` +
       `you'll hear whether you've been shortlisted. Shortlisted applicants get login details for a short AI video interview ` +
@@ -184,16 +191,27 @@ export interface FormResponse {
   >;
 }
 
-/** The form's "File upload" question (the resume), or null if nobody has added one yet. */
-export async function findUploadQuestion(formId: string): Promise<string | null> {
-  const form = await googleApi<{
-    items?: { questionItem?: { question?: { questionId?: string; fileUploadQuestion?: object } } }[];
-  }>(`${API}/${formId}`);
-  const q = form.items?.find((i) => i.questionItem?.question?.fileUploadQuestion)?.questionItem?.question;
-  return q?.questionId ?? null;
+/**
+ * Makes sure the form asks for a resume link, adding the question at the end if it was deleted (or the form was
+ * made while the form asked for uploads instead). Returns the question id.
+ */
+export async function ensureResumeLinkQuestion(form: GoogleJobForm): Promise<string> {
+  const current = await googleApi<{ items?: { questionItem?: { question?: { questionId?: string } } }[] }>(
+    `${API}/${form.formId}`,
+  );
+  const ids = new Set(current.items?.map((i) => i.questionItem?.question?.questionId).filter(Boolean));
+  if (form.questionIds.resumeUrl && ids.has(form.questionIds.resumeUrl)) return form.questionIds.resumeUrl;
+  const result = await googleApi<BatchReply>(`${API}/${form.formId}:batchUpdate`, {
+    method: "POST",
+    body: JSON.stringify({ requests: [itemRequest(RESUME_LINK_FIELD, current.items?.length ?? 0)] }),
+  });
+  const id = result.replies?.[0]?.createItem?.questionId?.[0];
+  if (!id) throw new Error("Google didn't return the new resume question");
+  log.info(`Form ${form.formId}: resume link question added`);
+  return id;
 }
 
-/** The first file uploaded in a response (preferring the known upload question). */
+/** The first file uploaded in a response (older forms may have a File upload question). */
 export function uploadedFile(r: FormResponse, questionId?: string): UploadedFile | null {
   const answers = r.answers ?? {};
   const fromQuestion = questionId ? answers[questionId]?.fileUploadAnswers?.answers?.[0] : undefined;

@@ -17,6 +17,7 @@ let google: typeof import("../lib/google");
 const realFetch = globalThis.fetch;
 const sentMail: string[] = [];
 let responses: object[] = [];
+const formEdits: string[] = [];
 
 function fakeGoogle(input: string | URL | Request, init?: RequestInit): Promise<Response> {
   const url = String(input instanceof Request ? input.url : input);
@@ -26,8 +27,14 @@ function fakeGoogle(input: string | URL | Request, init?: RequestInit): Promise<
   }
   if (url.startsWith("https://openidconnect.googleapis.com/")) return json({ email: "careers@example.com" });
   if (url.startsWith("https://forms.googleapis.com/v1/forms/FORM1/responses")) return json({ responses });
+  if (url === "https://forms.googleapis.com/v1/forms/FORM2") return json({ items: [{ questionItem: { question: { questionId: "n1" } } }] });
+  if (url === "https://forms.googleapis.com/v1/forms/FORM2:batchUpdate") {
+    formEdits.push(String(init?.body));
+    return json({ replies: [{ createItem: { itemId: "i9", questionId: ["link9"] } }] });
+  }
+  if (url.startsWith("https://forms.googleapis.com/v1/forms/FORM2/responses")) return json({});
   if (url === "https://forms.googleapis.com/v1/forms/FORM1") {
-    return json({ items: [{ questionItem: { question: { questionId: "q7", fileUploadQuestion: { folderId: "x" } } } }] });
+    return json({ items: [{ questionItem: { question: { questionId: "q5" } } }, { questionItem: { question: { questionId: "q7", fileUploadQuestion: { folderId: "x" } } } }] });
   }
   if (url.startsWith("https://www.googleapis.com/drive/v3/files/UPLOADED1?alt=media")) {
     return Promise.resolve(new Response("Full stack developer, 4 years of React and Node.", { headers: { "Content-Type": "text/plain" } }));
@@ -166,7 +173,7 @@ test("applications are screened and each applicant is told straight away that it
   assert.equal(kiran.resume?.fileName, "Kiran_CV.txt");
   assert.equal(kiran.resumeProblem, undefined);
   const jobNow = (await store.listJobs()).find((j) => j.id === job.id)!;
-  assert.equal(jobNow.googleForm!.uploadQuestionId, "q7", "upload question found automatically");
+  assert.equal(jobNow.googleForm!.questionIds.resumeUrl, "q5", "resume link question still in place");
 
   // Email 1 of 3: "application received", to everyone, straight away.
   for (const who of ["asha", "ravi", "neha", "kiran"]) {
@@ -249,4 +256,15 @@ test("HR rejects a shortlisted applicant: their login stops working and the reje
   assert.equal((await store.getCandidate(asha.id))!.status, "rejected");
   assert.match(subjectOf(mailTo("asha@example.com").at(-1)!), /^Your application for Service Advisor/);
   await assert.rejects(access.candidateLogin("asha@example.com", password), /Wrong email or password/);
+});
+
+test("a form whose resume link question was deleted gets it back automatically", async () => {
+  const other: Job = { ...job, id: "other", googleForm: { ...job.googleForm!, formId: "FORM2", questionIds: { fullName: "n1", resumeUrl: "gone" } } };
+  await store.saveJob(other);
+  await intake.syncJob(other);
+  assert.equal(formEdits.length, 1);
+  assert.match(formEdits[0], /Link to your resume/);
+  const saved = (await store.listJobs()).find((j) => j.id === "other")!;
+  assert.equal(saved.googleForm!.questionIds.resumeUrl, "link9");
+  assert.equal(saved.googleForm!.lastError, undefined);
 });

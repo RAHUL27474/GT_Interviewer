@@ -10,6 +10,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -32,6 +33,8 @@ interface Driver {
   stream(key: string, range?: FileRange): Promise<ReadableStream>;
   remove(keys: string[]): Promise<void>;
   removePrefix(prefix: string): Promise<void>;
+  /** A short-lived URL the browser can PUT one file to directly (bucket storage only). */
+  presignPut?(key: string, contentType: string, expiresSeconds: number): Promise<string>;
 }
 
 // ---------- Local folder ----------
@@ -73,6 +76,11 @@ function s3Driver(bucket: string): Driver {
     },
   });
   return {
+    presignPut(key, contentType, expiresSeconds) {
+      return getSignedUrl(client, new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: contentType }), {
+        expiresIn: expiresSeconds,
+      });
+    },
     async put(key, data, contentType) {
       await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: data, ContentType: contentType }));
     },
@@ -150,6 +158,11 @@ export function streamParts(parts: FilePart[], { start, end }: FileRange): Reada
 
 const bucket = process.env.S3_BUCKET?.trim();
 export const files: Driver = bucket ? s3Driver(bucket) : localDriver;
+/**
+ * Browsers upload answer videos straight to the bucket, bypassing the app server. Needed on hosts that cap request
+ * size (Vercel: 4.5 MB); the bucket must allow PUT from the app's address (npm run storage:cors).
+ */
+export const directUploads = Boolean(bucket);
 /** The local folder, whatever is configured (used by the migration script). */
 export const localFiles = { driver: localDriver, root: DATA_DIR };
 export const fileStorageLabel = bucket ? `S3 bucket "${bucket}"` : `local folder ${DATA_DIR}`;

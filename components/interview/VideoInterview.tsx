@@ -9,6 +9,7 @@ import {
   pickVideoMimeType,
   speak,
   stopSpeaking,
+  putWithProgress,
   uploadWithProgress,
   warmUpVoices,
 } from "./media";
@@ -300,7 +301,25 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
     setError("");
     setPendingForm(null);
     try {
-      const res = await uploadWithProgress(`${api}/answer`, form, setProgress);
+      // Video straight to the storage bucket first (most of the progress bar), then the answer without it.
+      const video = form.get("video");
+      if (state.directUpload && video instanceof Blob) {
+        const link = await fetch(`${api}/answer-upload`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: sessionId.current, index: Number(form.get("index")), type: video.type }),
+        });
+        if (link.status === 409) return handleInterrupted();
+        const target = await link.json();
+        if (!link.ok) throw new Error(target.error || "Could not prepare the video upload.");
+        await putWithProgress(target.url, video, target.contentType, (f) => setProgress(f * 0.95));
+        // Retries after this point don't upload the video again.
+        form.delete("video");
+        form.set("videoFile", target.file);
+      }
+      const res = await uploadWithProgress(`${api}/answer`, form, (f) =>
+        setProgress(form.has("videoFile") ? 0.95 + f * 0.05 : f),
+      );
       if (res.status === 409) return handleInterrupted();
       if (!res.ok) throw new Error(String(res.data.error || "Could not save your answer."));
       const next = res.data as unknown as InterviewState;

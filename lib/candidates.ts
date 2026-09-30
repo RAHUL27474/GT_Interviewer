@@ -8,7 +8,7 @@ import { HttpError } from "./http";
 import { logger, since, who } from "./log";
 import { computeIntegrity } from "./proctoring";
 import { computeScores } from "./scoring";
-import { files, mediaPrefix, resumeKey } from "./files";
+import { directUploads, files, mediaPrefix, resumeKey } from "./files";
 import { store } from "./store";
 import type { Candidate, CandidateSummary, Evaluation, InterviewState } from "./types";
 
@@ -37,6 +37,7 @@ export function interviewState(c: Candidate): InterviewState {
     secondPersonGraceSeconds: config.secondPersonGraceSeconds,
     serverTranscription: config.speechToText !== "off",
     startBy: startDeadline(c),
+    directUpload: directUploads,
   };
 }
 
@@ -204,9 +205,15 @@ export async function purgeOldMedia() {
   return due.length;
 }
 
-/** Restarts evaluations that were interrupted by a server restart. */
-export async function resumePendingEvaluations() {
-  const pending = await store.listCandidatesByStatus("evaluating");
+/**
+ * Restarts evaluations that were interrupted by a server restart. `olderThanMs` skips interviews that ended more
+ * recently (their grading may still be running elsewhere, e.g. on another serverless instance).
+ */
+export async function resumePendingEvaluations(olderThanMs = 0) {
+  const cutoff = Date.now() - olderThanMs;
+  const pending = (await store.listCandidatesByStatus("evaluating")).filter(
+    (c) => new Date(c.completedAt ?? 0).getTime() <= cutoff,
+  );
   await Promise.all(pending.map((c) => runEvaluation(c.id)));
 }
 

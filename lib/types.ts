@@ -342,4 +342,6 @@ export interface InterviewState {
   serverTranscription: boolean;
   /** The interview must be started before this (ISO), or null when there's no deadline. */
   startBy: string | null;
+  /** Answer videos are uploaded straight to the storage bucket (answer-upload route). */
+  directUpload: boolean;
 }

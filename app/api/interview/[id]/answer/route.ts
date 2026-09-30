@@ -36,7 +36,20 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
 
   try {
     let videoName: string | null = null;
-    if (video instanceof File && video.size > 0) {
+    // Uploaded straight to the bucket beforehand (answer-upload route): check it's this answer's and it arrived.
+    const uploaded = form.get("videoFile");
+    if (typeof uploaded === "string" && uploaded) {
+      if (!new RegExp(`^${index}-[0-9a-f]{8}\\.(webm|mp4)$`).test(uploaded)) throw new HttpError(400, "Invalid video reference.");
+      const size = await files.size(mediaKey(id, uploaded)).catch(() => -1);
+      if (size <= 0) throw new HttpError(400, "The answer video didn't finish uploading. Please try again.");
+      if (size > config.maxVideoBytes) {
+        await files.remove([mediaKey(id, uploaded)]);
+        throw new HttpError(400, "Video is too large.");
+      }
+      // Not added to `written`: if this request fails after an earlier identical one succeeded (lost reply, retry),
+      // cleaning up would delete a saved answer's video. Stray uploads go with the media-retention cleanup.
+      videoName = uploaded;
+    } else if (video instanceof File && video.size > 0) {
       const ext = VIDEO_EXT[video.type.split(";")[0]];
       if (!ext) throw new HttpError(400, "Unsupported video format.");
       if (video.size > config.maxVideoBytes) throw new HttpError(400, "Video is too large.");
@@ -73,7 +86,7 @@ export const POST = handler(async (request: Request, ctx: { params: Promise<{ id
       }
     });
     if (!updated) throw new HttpError(404, "Interview not found.");
-    const videoMb = video instanceof File ? (video.size / 1024 / 1024).toFixed(1) : "0";
+    const videoMb = video instanceof File ? (video.size / 1024 / 1024).toFixed(1) : videoName ? "(direct upload)" : "0";
     log.info(
       `${who(updated)} answered ${index + 1}/${updated.questions.length}: video ${videoMb} MB, ` +
         `${snapshotNames.length} snapshot(s), transcript ${updated.answers[index].transcript.length} chars`,

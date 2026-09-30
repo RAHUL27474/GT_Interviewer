@@ -5,6 +5,12 @@ import { handler, HttpError } from "@/lib/http";
 import { store } from "@/lib/store";
 import { screenChunkName } from "@/lib/types";
 
+/**
+ * Largest response body. Vercel refuses responses over 4.5 MB, so there each reply carries at most 4 MB and the video
+ * player fetches the rest as further ranges (which players do anyway).
+ */
+const MAX_RESPONSE_BYTES = process.env.VERCEL ? 4 * 1024 * 1024 : Infinity;
+
 const MIME: Record<string, string> = { ".webm": "video/webm", ".mp4": "video/mp4", ".jpg": "image/jpeg" };
 
 /** Streams an answer video, snapshot or screen recording. Supports Range requests so the video player can seek. */
@@ -29,9 +35,11 @@ export const GET = handler(async (request: Request, ctx: { params: Promise<{ id:
   const type = MIME[path.extname(file)] ?? "application/octet-stream";
 
   const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get("range") ?? "");
-  if (range && (range[1] || range[2])) {
-    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
-    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+  // A whole file too big for one reply is sent as its first range.
+  if ((range && (range[1] || range[2])) || size > MAX_RESPONSE_BYTES) {
+    const start = range?.[1] ? Number(range[1]) : range?.[2] ? Math.max(0, size - Number(range[2])) : 0;
+    const requestedEnd = range?.[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    const end = Math.min(requestedEnd, start + MAX_RESPONSE_BYTES - 1);
     if (start >= size || start > end) {
       return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
     }

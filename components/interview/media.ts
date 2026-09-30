@@ -111,3 +111,17 @@ export function uploadWithProgress(
     xhr.send(body);
   });
 }
+
+/** PUT a file to a signed storage URL (direct-to-bucket upload), with progress. */
+export function putWithProgress(url: string, body: Blob, contentType: string, onProgress: (fraction: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("Content-Type", contentType);
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.onload = () =>
+      xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Video upload failed (${xhr.status}).`));
+    xhr.onerror = () => reject(new Error("Network error while uploading the video."));
+    xhr.send(body);
+  });
+}

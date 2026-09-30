@@ -11,6 +11,12 @@ export async function register() {
     const stt = SPEECH_TO_TEXT_LABEL[config.speechToText];
     logger("startup").info(`AI: ${config.aiProvider} (${activeModel()}), speech-to-text: ${stt}`);
     logger("startup").info(`Database: ${databaseLabel}; files: ${fileStorageLabel}; email: ${emailLabel}`);
+    // Serverless (Vercel): nothing stays running between requests, so timers would be unreliable and a grading
+    // resumed at every cold start could run twice. An external scheduler calls /api/cron every minute instead.
+    if (process.env.VERCEL) {
+      logger("startup").info("Serverless: background jobs run through /api/cron (CRON_SECRET)");
+      return;
+    }
     // Don't block server startup on AI calls.
     resumePendingEvaluations().catch((err) => console.error("Resuming evaluations failed:", err));
     // Auto-submit interviews whose browser went silent (closed, crashed, or offline).

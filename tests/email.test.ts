@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { formatDeadline, gradedMail, loginDetailsMail } from "../lib/email";
+import { applicationReceivedMail, formatDeadline, gradedMail, loginDetailsMail, rejectionMail } from "../lib/email";
 import type { Candidate } from "../lib/types";
 
 const opts = {
@@ -17,7 +17,8 @@ const opts = {
 test("login email has the login page, email, password and deadline", () => {
   const mail = loginDetailsMail({ fullName: "Asha", email: "asha@example.com", jobTitle: "Advisor" }, opts);
   assert.equal(mail.to, "asha@example.com");
-  assert.equal(mail.subject, "Your video interview for Advisor - Acme");
+  assert.equal(mail.subject, "You're shortlisted: video interview for Advisor - Acme");
+  assert.match(mail.text, /shortlisted/);
   for (const body of [mail.text, mail.html]) {
     assert.match(body, /https:\/\/jobs\.example\.com\//);
     assert.match(body, /asha@example\.com/);
@@ -54,4 +55,18 @@ test("HR email covers graded and failed interviews", () => {
   assert.match(ok.text, /total 72/);
   const failed = gradedMail({ ...base, evaluationError: "timeout" }, ["hr@example.com"], null);
   assert.match(failed.text, /grading failed \(timeout\)/);
+});
+
+test("application-received email promises an answer within the decision delay", () => {
+  const mail = applicationReceivedMail({ fullName: "Asha", email: "asha@example.com", jobTitle: "Advisor" }, { company: "Acme", decisionHours: 2 });
+  assert.equal(mail.subject, "Application received: Advisor - Acme");
+  assert.match(mail.text, /within about 2 hours/);
+  assert.doesNotMatch(mail.text, /Password/);
+});
+
+test("rejection email is polite and gives no screening details", () => {
+  const mail = rejectionMail({ fullName: "<b>Asha</b>", email: "asha@example.com", jobTitle: "Advisor" }, { company: "Acme" });
+  assert.equal(mail.subject, "Your application for Advisor - Acme");
+  assert.match(mail.text, /won't be taking it forward/);
+  assert.ok(!mail.html.includes("<b>Asha</b>"));
 });

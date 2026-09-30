@@ -60,3 +60,12 @@ export function mockEvaluation(candidate: Candidate): Evaluation {
     proctoringNotes: [],
   };
 }
+
+export function mockScreening() {
+  return {
+    score: 70,
+    summary: `${TEST} Placeholder rating; set an AI key for real resume screening.`,
+    strengths: [`${TEST} Not assessed`],
+    gaps: [],
+  };
+}

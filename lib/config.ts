@@ -90,8 +90,10 @@ export const config = {
   },
   /** How often every open job's Google Form is checked for new responses. */
   formPollSeconds: Number(process.env.FORM_POLL_SECONDS || 60),
-  /** The interview login email goes out this long after the application. */
-  inviteDelayMinutes: Number(process.env.INVITE_DELAY_MINUTES ?? 30),
+  /** The decision email (shortlisted with the interview login, or not selected) goes out this long after applying. */
+  decisionDelayMinutes: Number(process.env.DECISION_DELAY_MINUTES ?? 120),
+  /** Resumes rated at or above this (0-100) are shortlisted, unless the job sets its own. */
+  defaultPassMark: Number(process.env.RESUME_PASS_MARK ?? 60),
   /** The candidate must start the interview within this many hours of the login email. */
   interviewAccessHours: Number(process.env.INTERVIEW_ACCESS_HOURS || 24),
   /** Dates and times in emails are written in this time zone. */

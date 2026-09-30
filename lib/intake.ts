@@ -1,15 +1,16 @@
 // Turns Google Form responses into candidates. Every FORM_POLL_SECONDS, each open job's form is checked for new
 // responses; each one gets its resume read from the pasted link, AI questions, and a login email scheduled
-// INVITE_DELAY_MINUTES after it was submitted (lib/access.ts).
+// DECISION_DELAY_MINUTES after it was submitted (lib/access.ts).
 import crypto from "node:crypto";
-import { newAccess } from "./access";
-import { generateQuestions, resumeToPart } from "./ai";
+import { newAccess, sendApplicationReceived } from "./access";
+import { generateQuestions, resumeToPart, screenResume } from "./ai";
 import { config } from "./config";
 import { files, resumeKey } from "./files";
 import { googleConnection } from "./google";
 import { type FormResponse, listResponses } from "./google-forms";
 import { logger, who } from "./log";
 import { fetchResume, ResumeLinkError } from "./resume-link";
+import { decide, screeningRules } from "./screening";
 import { JOINING_OPTIONS } from "./scoring";
 import { store } from "./store";
 import type { Candidate, CandidateProfile, FormField, GoogleJobForm, Job } from "./types";
@@ -97,13 +98,17 @@ async function intakeResponse(job: Job, form: GoogleJobForm, r: FormResponse, sk
       resumeProblem = err instanceof ResumeLinkError ? err.message : `The resume couldn't be read (${err instanceof Error ? err.message : err}).`;
     }
   }
-  if (resumeProblem) log.warn(`${profile.fullName} (${job.title}): ${resumeProblem} Questions will come from the job description only.`);
+  if (resumeProblem) log.warn(`${profile.fullName} (${job.title}): ${resumeProblem}`);
 
-  let questions;
+  // Screen the resume, then write questions only for those invited to interview.
+  let screening;
+  let questions: Candidate["questions"] = [];
   try {
-    questions = await generateQuestions({ job, candidate: profile, resumePart });
+    const rating = resumePart ? await screenResume({ job, candidate: profile, resumePart }) : null;
+    screening = decide(rating, profile, screeningRules(job, config.defaultPassMark), resumeProblem);
+    if (screening.decision === "selected") questions = await generateQuestions({ job, candidate: profile, resumePart });
   } catch (err) {
-    log.error(`${profile.fullName} (${job.title}): couldn't write questions, will retry:`, err);
+    log.error(`${profile.fullName} (${job.title}): AI screening or questions failed, will retry:`, err);
     if (resume) await files.remove([resumeKey(resume.storedAs)]).catch(() => {});
     return false;
   }
@@ -121,7 +126,8 @@ async function intakeResponse(job: Job, form: GoogleJobForm, r: FormResponse, sk
     source: "google_form",
     googleResponseId: r.responseId,
     access: newAccess(submitted),
-    status: "ready",
+    screening,
+    status: screening.decision === "rejected" ? "rejected" : "ready",
     questions,
     answers: [],
     proctoring: { events: [] },
@@ -132,7 +138,11 @@ async function intakeResponse(job: Job, form: GoogleJobForm, r: FormResponse, sk
     if (await store.getCandidate(id)) return true; // another server added it at the same moment
     throw err;
   }
-  log.info(`${who(candidate)} applied for "${job.title}" via Google Form; login email due ${candidate.access!.inviteAt}`);
+  log.info(
+    `${who(candidate)} applied for "${job.title}" via Google Form: ${screening.decision} ` +
+      `(${screening.reasons.join(" ")}); decision email due ${candidate.access!.inviteAt}`,
+  );
+  await sendApplicationReceived(candidate);
   return true;
 }
 

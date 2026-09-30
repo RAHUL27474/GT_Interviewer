@@ -24,7 +24,7 @@ export async function register() {
     const google = await googleConnection().catch(() => null);
     logger("startup").info(
       `Google: ${google ? `connected as ${google.email}` : googleConfigured ? "not connected (connect it in Jobs)" : "GOOGLE_CLIENT_ID not set"}; ` +
-        `login emails ${config.inviteDelayMinutes} min after applying, ${config.interviewAccessHours} h to start`,
+        `decision emails ${config.decisionDelayMinutes} min after applying, ${config.interviewAccessHours} h to start`,
     );
     setInterval(() => {
       syncAllForms().catch((err) => console.error("Form check failed:", err));

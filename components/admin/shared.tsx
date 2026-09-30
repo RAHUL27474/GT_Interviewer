@@ -8,11 +8,13 @@ export const STATUS: Record<CandidateStatus, { label: string; tone: Tone }> = {
   evaluating: { label: "Evaluating…", tone: "neutral" },
   evaluation_failed: { label: "Eval failed", tone: "bad" },
   completed: { label: "Completed", tone: "good" },
+  rejected: { label: "Not selected", tone: "bad" },
 };
 
 /** For interviews not started yet: where the login email stands (replaces "Not started"). */
 export const INVITE: Record<InviteState, { label: string; tone: Tone }> = {
-  scheduled: { label: "Email scheduled", tone: "neutral" },
+  review: { label: "Needs review", tone: "warn" },
+  scheduled: { label: "Shortlisted, email scheduled", tone: "neutral" },
   sent: { label: "Invited", tone: "neutral" },
   email_failed: { label: "Email failed", tone: "bad" },
   expired: { label: "Expired", tone: "bad" },

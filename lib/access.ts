@@ -1,15 +1,18 @@
-// Candidate login for the interview. INVITE_DELAY_MINUTES after applying, the candidate is emailed a random password;
+// Candidate login for the interview. DECISION_DELAY_MINUTES after applying, shortlisted candidates are emailed a random password;
 // they then have INTERVIEW_ACCESS_HOURS to log in and start. Once started, the interview runs to the end as usual.
 import crypto from "node:crypto";
+import path from "node:path";
 import { cookies } from "next/headers";
+import { generateQuestions, resumeToPart } from "./ai";
 import { hashPassword, loginLimiter, readSignedToken, signedToken, verifyPassword } from "./auth";
 import { config } from "./config";
-import { appLink, formatDeadline, loginDetailsMail, send } from "./email";
+import { appLink, applicationReceivedMail, formatDeadline, loginDetailsMail, rejectionMail, send } from "./email";
+import { files, resumeKey } from "./files";
 import { HttpError } from "./http";
 import { accessExpired, inviteState, startDeadline } from "./invite-state";
 import { logger, who } from "./log";
 import { store } from "./store";
-import type { Candidate, CandidateAccess } from "./types";
+import type { Candidate, CandidateAccess, Screening } from "./types";
 
 const log = logger("invite");
 
@@ -25,9 +28,9 @@ export function generatePassword(length = 10) {
   return Array.from({ length }, () => PASSWORD_CHARS[crypto.randomInt(PASSWORD_CHARS.length)]).join("");
 }
 
-/** Access for a new applicant: login details are due INVITE_DELAY_MINUTES after `appliedAt`. */
+/** Access for a new applicant: the decision email is due DECISION_DELAY_MINUTES after `appliedAt`. */
 export function newAccess(appliedAt: Date): CandidateAccess {
-  return { inviteAt: new Date(appliedAt.getTime() + config.inviteDelayMinutes * 60_000).toISOString(), version: 0 };
+  return { inviteAt: new Date(appliedAt.getTime() + config.decisionDelayMinutes * 60_000).toISOString(), version: 0 };
 }
 
 export { accessExpired, inviteState, startDeadline };
@@ -105,35 +108,153 @@ export async function issueLoginDetails(
   return { emailed: true };
 }
 
+/** The "we've received your application" email, sent straight after the application is read. Never throws. */
+export async function sendApplicationReceived(c: Candidate) {
+  let error: string | undefined;
+  try {
+    await send(
+      applicationReceivedMail(c, {
+        company: config.companyName,
+        decisionHours: Math.round((config.decisionDelayMinutes / 60) * 10) / 10,
+      }),
+    );
+    log.info(`${who(c)}: application-received email sent`);
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+    log.error(`${who(c)}: application-received email failed: ${error}`);
+  }
+  await store.updateCandidate(c.id, (cand) => {
+    if (!cand.screening) return;
+    if (error) cand.screening.receivedEmailError = error;
+    else {
+      cand.screening.receivedEmailedAt = new Date().toISOString();
+      delete cand.screening.receivedEmailError;
+    }
+  });
+}
+
+/** Sends the "not taken forward" email. On failure it's recorded and retried later. Returns whether it was sent. */
+export async function sendRejection(id: string): Promise<boolean> {
+  const c = await store.getCandidate(id);
+  if (!c) throw new HttpError(404, "Candidate not found.");
+  try {
+    await send(rejectionMail(c, { company: config.companyName }));
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    await store.updateCandidate(id, (cand) => {
+      cand.access ??= newAccess(new Date());
+      cand.access.emailError = error;
+      cand.access.retryAt = new Date(Date.now() + RETRY_MS).toISOString();
+    });
+    log.error(`${who(c)}: rejection email failed, will retry: ${error}`);
+    return false;
+  }
+  await store.updateCandidate(id, (cand) => {
+    if (cand.screening) cand.screening.rejectionEmailedAt = new Date().toISOString();
+    if (cand.access) {
+      delete cand.access.emailError;
+      delete cand.access.retryAt;
+    }
+  });
+  log.info(`${who(c)}: rejection email sent`);
+  return true;
+}
+
+/** Whether a decision email for `c` has come due and isn't already sent, being sent, or waiting for a retry. */
+function decisionDue(c: Candidate, now: number) {
+  const a = c.access;
+  if (!a || Date.parse(a.inviteAt) > now || (a.retryAt && Date.parse(a.retryAt) > now)) return false;
+  if (c.status === "rejected") return Boolean(c.screening && !c.screening.rejectionEmailedAt);
+  // Candidates waiting for HR's review get nothing until HR decides.
+  return c.status === "ready" && !a.invitedAt && c.screening?.decision !== "review";
+}
+
 let sweeping = false;
 
-/** Emails login details that have come due (INVITE_DELAY_MINUTES after applying). Runs every few seconds. */
+/**
+ * Sends the decision emails that have come due (DECISION_DELAY_MINUTES after applying): login details to the
+ * shortlisted, the rejection email to the rest. Runs every 30 seconds.
+ */
 export async function sendDueInvites() {
   if (sweeping) return;
   sweeping = true;
   try {
     const now = Date.now();
-    const due = (await store.listCandidatesByStatus("ready")).filter(
-      (c) =>
-        c.access &&
-        !c.access.invitedAt &&
-        Date.parse(c.access.inviteAt) <= now &&
-        (!c.access.retryAt || Date.parse(c.access.retryAt) <= now),
-    );
+    const due = (await store.listCandidatesByStatus("ready", "rejected")).filter((c) => decisionDue(c, now));
     for (const c of due) {
       // Claim it first, so a second app server doesn't send the same email.
       let claimed = false;
       await store.updateCandidate(c.id, (cand) => {
-        const a = cand.access;
-        if (!a || a.invitedAt || (a.retryAt && Date.parse(a.retryAt) > Date.now())) return;
-        a.retryAt = new Date(Date.now() + RETRY_MS).toISOString();
+        if (!decisionDue(cand, Date.now())) return;
+        cand.access!.retryAt = new Date(Date.now() + RETRY_MS).toISOString();
         claimed = true;
       });
-      if (claimed) await issueLoginDetails(c.id);
+      if (!claimed) continue;
+      if (c.status === "rejected") await sendRejection(c.id);
+      else await issueLoginDetails(c.id);
     }
   } finally {
     sweeping = false;
   }
+}
+
+/**
+ * HR overrides the screening: "selected" writes the interview questions if needed and emails the login now;
+ * "rejected" emails the rejection now (unless already sent).
+ */
+export async function decideByHr(
+  id: string,
+  decision: "selected" | "rejected",
+  by: string,
+  origin?: string,
+): Promise<IssueResult & { rejectionSent?: boolean }> {
+  const c = await store.getCandidate(id);
+  if (!c) throw new HttpError(404, "Candidate not found.");
+  if (c.status !== "ready" && c.status !== "rejected") {
+    throw new HttpError(409, "This candidate has already started or finished the interview.");
+  }
+
+  if (decision === "rejected") {
+    await store.updateCandidate(id, (cand) => {
+      cand.status = "rejected";
+      cand.screening = { ...(cand.screening ?? emptyScreening()), decision: "rejected", decidedBy: by };
+      cand.screening.reasons = [...cand.screening.reasons, `Rejected by ${by}.`];
+      // A login already sent stops working.
+      if (cand.access) {
+        cand.access.version += 1;
+        delete cand.access.passwordHash;
+      }
+    });
+    log.info(`${who(c)}: rejected by ${by}`);
+    const sent = c.screening?.rejectionEmailedAt ? true : await sendRejection(id);
+    return { emailed: sent, rejectionSent: sent };
+  }
+
+  // Shortlisted by HR: rejected or unreadable-resume applicants have no questions yet.
+  let questions = c.questions;
+  if (!questions.length) {
+    const resumePart = c.resume
+      ? await resumeToPart(await files.get(resumeKey(c.resume.storedAs)), path.extname(c.resume.storedAs))
+      : null;
+    try {
+      questions = await generateQuestions({ job: c.jobSnapshot, candidate: c, resumePart });
+    } catch (err) {
+      log.error(`${who(c)}: couldn't write questions:`, err);
+      throw new HttpError(502, "The AI couldn't write interview questions right now. Please try again in a few minutes.");
+    }
+  }
+  await store.updateCandidate(id, (cand) => {
+    cand.status = "ready";
+    cand.questions = questions;
+    cand.screening = { ...(cand.screening ?? emptyScreening()), decision: "selected", decidedBy: by };
+    cand.screening.reasons = [...cand.screening.reasons, `Shortlisted by ${by}.`];
+  });
+  log.info(`${who(c)}: shortlisted by ${by}`);
+  return issueLoginDetails(id, { origin, showOnFailure: true });
+}
+
+function emptyScreening(): Screening {
+  return { score: null, decision: "review", summary: "", strengths: [], gaps: [], reasons: [], at: new Date().toISOString() };
 }
 
 // ---------- Candidate sessions ----------

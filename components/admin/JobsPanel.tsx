@@ -5,7 +5,7 @@ import { useState, type FormEvent } from "react";
 import type { GoogleStatus, Job } from "@/lib/types";
 import { Alert, Button, Card, CardTitle, Field, inputClass, Pill } from "../ui";
 
-export function JobsPanel({ jobs, google }: { jobs: Job[]; google: GoogleStatus }) {
+export function JobsPanel({ jobs, google, defaultPassMark }: { jobs: Job[]; google: GoogleStatus; defaultPassMark: number }) {
   const [editing, setEditing] = useState<Job | "new" | null>(null);
   const [notice, setNotice] = useState("");
 
@@ -29,6 +29,7 @@ export function JobsPanel({ jobs, google }: { jobs: Job[]; google: GoogleStatus 
           key={editing === "new" ? "new" : editing.id}
           job={editing === "new" ? null : editing}
           canCreateForm={Boolean(google.connection)}
+          defaultPassMark={defaultPassMark}
           onDone={(warning) => {
             setEditing(null);
             setNotice(warning ?? "");
@@ -37,7 +38,13 @@ export function JobsPanel({ jobs, google }: { jobs: Job[]; google: GoogleStatus 
       )}
 
       {jobs.map((j) => (
-        <JobCard key={j.id} job={j} googleConnected={Boolean(google.connection)} onEdit={() => setEditing(j)} />
+        <JobCard
+          key={j.id}
+          job={j}
+          googleConnected={Boolean(google.connection)}
+          defaultPassMark={defaultPassMark}
+          onEdit={() => setEditing(j)}
+        />
       ))}
     </div>
   );
@@ -131,7 +138,17 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-function JobCard({ job, googleConnected, onEdit }: { job: Job; googleConnected: boolean; onEdit: () => void }) {
+function JobCard({
+  job,
+  googleConnected,
+  defaultPassMark,
+  onEdit,
+}: {
+  job: Job;
+  googleConnected: boolean;
+  defaultPassMark: number;
+  onEdit: () => void;
+}) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -172,7 +189,9 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
           <p className="mt-0.5 text-sm text-slate-500">
             {job.updatedBy && <span className="mr-1">Last edited by {job.updatedBy} ·</span>}
             {job.location || "No location"} · Budget:{" "}
-            {job.salaryMax ? `₹${job.salaryMin ?? 0}–${job.salaryMax} LPA` : "not set"}
+            {job.salaryMax ? `₹${job.salaryMin ?? 0}–${job.salaryMax} LPA` : "not set"} · Resume pass mark{" "}
+            {job.screening?.passMark ?? defaultPassMark}
+            {job.screening?.minExperience != null && ` · min ${job.screening.minExperience} yrs experience`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -248,10 +267,12 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
 function JobForm({
   job,
   canCreateForm,
+  defaultPassMark,
   onDone,
 }: {
   job: Job | null;
   canCreateForm: boolean;
+  defaultPassMark: number;
   onDone: (warning?: string) => void;
 }) {
   const router = useRouter();
@@ -274,6 +295,8 @@ function JobForm({
         description: f.get("description"),
         active: f.get("active") === "on",
         createForm: f.get("createForm") === "on",
+        passMark: f.get("passMark"),
+        minExperience: f.get("minExperience"),
       }),
     });
     setBusy(false);
@@ -303,6 +326,17 @@ function JobForm({
           </Field>
           <Field label="Budget max (₹ LPA)" htmlFor="salaryMax">
             <input id="salaryMax" name="salaryMax" type="number" min={0} step={0.1} defaultValue={job?.salaryMax ?? ""} className={inputClass} />
+          </Field>
+          <Field
+            label="Resume pass mark (0–100)"
+            htmlFor="passMark"
+            optional
+            hint={`Resumes the AI rates at or above this are shortlisted. Empty: ${defaultPassMark}.`}
+          >
+            <input id="passMark" name="passMark" type="number" min={0} max={100} step={1} defaultValue={job?.screening?.passMark ?? ""} placeholder={String(defaultPassMark)} className={inputClass} />
+          </Field>
+          <Field label="Minimum experience (years)" htmlFor="minExperience" optional hint="Applicants with less are not selected.">
+            <input id="minExperience" name="minExperience" type="number" min={0} step={0.5} defaultValue={job?.screening?.minExperience ?? ""} className={inputClass} />
           </Field>
           <Field
             label="Job description"

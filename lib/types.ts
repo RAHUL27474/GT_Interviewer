@@ -35,6 +35,37 @@ export interface Job {
   updatedBy?: string;
   /** The Google Form applicants fill in for this job (created from the dashboard). */
   googleForm?: GoogleJobForm;
+  /** Resume screening rules. Missing means the defaults (pass mark 60, no experience minimum). */
+  screening?: JobScreening;
+}
+
+export interface JobScreening {
+  /** Resumes the AI rates at or above this (0-100) are shortlisted. */
+  passMark: number;
+  /** Applicants with less total experience (years) are not selected, whatever the resume score. */
+  minExperience: number | null;
+}
+
+/** The resume check that decides who is invited to interview. */
+export interface Screening {
+  /** 0-100 match between resume and job description; null when there was no readable resume. */
+  score: number | null;
+  /** selected: interview invite; rejected: rejection email; review: waiting for HR to decide. */
+  decision: "selected" | "rejected" | "review";
+  /** For HR only, never sent to the applicant. */
+  summary: string;
+  strengths: string[];
+  gaps: string[];
+  /** Rule-based reasons, e.g. below the experience minimum or pass mark. */
+  reasons: string[];
+  at: string;
+  /** Set when HR changed the decision. */
+  decidedBy?: string;
+  /** When the "application received" email went out, or why it failed. */
+  receivedEmailedAt?: string;
+  receivedEmailError?: string;
+  /** When the rejection email went out. */
+  rejectionEmailedAt?: string;
 }
 
 /** Form fields the app reads from each response, keyed to the form's question ids. */
@@ -71,7 +102,7 @@ export interface GoogleJobForm {
 
 /** Candidate login for the interview: emailed after applying, valid for a limited time. */
 export interface CandidateAccess {
-  /** When the login email is due (applied + INVITE_DELAY_MINUTES). */
+  /** When the decision email (shortlisted with login, or rejection) is due: applied + DECISION_DELAY_MINUTES. */
   inviteAt: string;
   passwordHash?: string;
   /** Bumped when a new password is issued, signing out older sessions. */
@@ -140,7 +171,8 @@ export interface Scores {
   recommendation: string;
 }
 
-export type CandidateStatus = "ready" | "in_progress" | "evaluating" | "evaluation_failed" | "completed";
+/** "rejected": not selected at resume screening (no interview). */
+export type CandidateStatus = "ready" | "in_progress" | "evaluating" | "evaluation_failed" | "completed" | "rejected";
 
 export type ProctorEventType =
   | "face_missing"
@@ -231,6 +263,8 @@ export interface Candidate extends CandidateProfile {
   googleResponseId?: string;
   /** Email + password login for the interview. Missing on older candidates, who use the link alone. */
   access?: CandidateAccess;
+  /** Resume screening; missing on candidates from before screening existed (all were invited). */
+  screening?: Screening;
   status: CandidateStatus;
   questions: Question[];
   answers: Answer[];
@@ -280,9 +314,10 @@ export interface CandidateSummary
   integrity: IntegritySummary;
   /** For interviews not started yet: where the login invite stands. */
   invite: InviteState | null;
+  screening: Pick<Screening, "score" | "decision"> | null;
 }
 
-export type InviteState = "scheduled" | "sent" | "email_failed" | "expired";
+export type InviteState = "review" | "scheduled" | "sent" | "email_failed" | "expired";
 
 export interface InterviewState {
   fullName: string;

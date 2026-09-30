@@ -42,13 +42,15 @@ export const formEditUrl = (formId: string) => `https://docs.google.com/forms/d/
 
 function formDescription(job: Pick<Job, "location" | "description">) {
   const minutes = config.questionCount * (config.minutesPerQuestion + 1);
-  const delay = config.inviteDelayMinutes;
+  const delay = config.decisionDelayMinutes;
   return [
     job.location ? `Location: ${job.location}` : "",
     job.description,
     "—",
-    `How it works: after you submit this form, you'll receive an email${delay ? ` within about ${delay < 60 ? `${delay} minutes` : `${Math.round(delay / 60)} hour(s)`}` : ""} ` +
-      `with login details for a short AI video interview (about ${minutes} minutes). You'll have ${config.interviewAccessHours} hours to start it. ` +
+    "How it works: you'll get an email confirming your application straight away. " +
+      `We then review your resume, and${delay ? ` within about ${delay < 60 ? `${delay} minutes` : `${Math.round(delay / 60)} hour(s)`}` : ""} ` +
+      `you'll hear whether you've been shortlisted. Shortlisted applicants get login details for a short AI video interview ` +
+      `(about ${minutes} minutes), to be started within ${config.interviewAccessHours} hours. ` +
       "You'll need a laptop or desktop with a webcam and microphone.",
   ]
     .filter(Boolean)

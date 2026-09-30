@@ -11,13 +11,14 @@ import { CandidateDrawer } from "./CandidateDrawer";
 import { JobsPanel } from "./JobsPanel";
 import { IntegrityPill, RecommendationPill, Signed, STATUS, statusBadge } from "./shared";
 
-type SortKey = "fullName" | "jobTitle" | "createdAt" | "status" | "totalExperience" | "expectedCTC" | "interview" | "joining" | "salary" | "total" | "integrity";
+type SortKey = "fullName" | "jobTitle" | "createdAt" | "status" | "resume" | "totalExperience" | "expectedCTC" | "interview" | "joining" | "salary" | "total" | "integrity";
 
 const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
   { key: "fullName", label: "Candidate" },
   { key: "jobTitle", label: "Position" },
   { key: "createdAt", label: "Applied" },
   { key: "status", label: "Status" },
+  { key: "resume", label: "Resume /100", numeric: true },
   { key: "totalExperience", label: "Exp (yrs)", numeric: true },
   { key: "expectedCTC", label: "CTC cur → exp", numeric: true },
   { key: "interview", label: "Interview /70", numeric: true },
@@ -29,6 +30,7 @@ const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
 
 function sortValue(c: CandidateSummary, key: SortKey): string | number {
   if (key === "total") return c.scores?.total ?? -Infinity;
+  if (key === "resume") return c.screening?.score ?? -Infinity;
   if (key === "integrity") return c.integrity.points;
   if (key === "interview" || key === "joining" || key === "salary") return c.scores?.[key].points ?? -Infinity;
   return c[key];
@@ -36,6 +38,7 @@ function sortValue(c: CandidateSummary, key: SortKey): string | number {
 
 interface Props {
   initialTab: "candidates" | "jobs";
+  defaultPassMark: number;
   google: GoogleStatus;
   me: PublicStaffUser;
   team: PublicStaffUser[];
@@ -45,7 +48,7 @@ interface Props {
   joiningLabels: Record<string, string>;
 }
 
-export function Dashboard({ initialTab, google, me, team, deleteAfterDays, candidates, jobs, joiningLabels }: Props) {
+export function Dashboard({ initialTab, defaultPassMark, google, me, team, deleteAfterDays, candidates, jobs, joiningLabels }: Props) {
   const isManager = isManagerOrAbove(me.role);
   const [accountOpen, setAccountOpen] = useState(false);
   const router = useRouter();
@@ -78,9 +81,9 @@ export function Dashboard({ initialTab, google, me, team, deleteAfterDays, candi
   ];
 
   function exportCsv() {
-    const header = ["Name", "Email", "Phone", "Position", "Applied", "Status", "Experience", "Current CTC", "Expected CTC", "Joining", "Interview (/70)", "Joining pts", "Salary pts", "Total", "Recommendation", "Interrupted", "Integrity risk", "Proctoring flags"];
+    const header = ["Name", "Email", "Phone", "Position", "Applied", "Status", "Resume score", "Experience", "Current CTC", "Expected CTC", "Joining", "Interview (/70)", "Joining pts", "Salary pts", "Total", "Recommendation", "Interrupted", "Integrity risk", "Proctoring flags"];
     const body = rows.map((c) => [
-      c.fullName, c.email, c.phone, c.jobTitle, c.createdAt.slice(0, 10), statusBadge(c).label, c.totalExperience,
+      c.fullName, c.email, c.phone, c.jobTitle, c.createdAt.slice(0, 10), statusBadge(c).label, c.screening?.score ?? "", c.totalExperience,
       c.currentCTC, c.expectedCTC, joiningLabels[c.joiningCategory] ?? c.joiningCategory,
       c.scores?.interview.points ?? "", c.scores?.joining.points ?? "", c.scores?.salary.points ?? "",
       c.scores?.total ?? "", c.scores?.recommendation ?? "", c.interrupted ? "Yes" : "No", c.integrity.level,
@@ -136,7 +139,7 @@ export function Dashboard({ initialTab, google, me, team, deleteAfterDays, candi
       {tab === "team" && isManager ? (
         <TeamPanel me={me} team={team} deleteAfterDays={deleteAfterDays} />
       ) : tab === "jobs" ? (
-        <JobsPanel jobs={jobs} google={google} />
+        <JobsPanel jobs={jobs} google={google} defaultPassMark={defaultPassMark} />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -220,6 +223,7 @@ export function Dashboard({ initialTab, google, me, team, deleteAfterDays, candi
                           </span>
                         )}
                       </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{c.screening?.score ?? "–"}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{c.totalExperience}</td>
                       <td className="px-3 py-2.5 text-right whitespace-nowrap tabular-nums">
                         {c.currentCTC} → {c.expectedCTC}

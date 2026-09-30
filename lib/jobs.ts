@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { config } from "./config";
 import { googleConnection } from "./google";
 import { createJobForm, syncJobForm } from "./google-forms";
 import { HttpError } from "./http";
@@ -14,6 +15,10 @@ export function parseJob(body: Record<string, unknown>, existing?: Job): Job {
   const salaryMax = optNum(body.salaryMax);
   if ([salaryMin, salaryMax].some((n) => n !== null && !(n >= 0))) throw new HttpError(400, "Salary must be a positive number.");
   if (salaryMin !== null && salaryMax !== null && salaryMin > salaryMax) throw new HttpError(400, "Salary min is above max.");
+  const passMark = optNum(body.passMark);
+  const minExperience = optNum(body.minExperience);
+  if (passMark !== null && !(passMark >= 0 && passMark <= 100)) throw new HttpError(400, "Pass mark must be between 0 and 100.");
+  if (minExperience !== null && !(minExperience >= 0)) throw new HttpError(400, "Minimum experience must be a positive number.");
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return {
     id: existing?.id ?? `${slug}-${crypto.randomBytes(3).toString("hex")}`,
@@ -24,6 +29,8 @@ export function parseJob(body: Record<string, unknown>, existing?: Job): Job {
     salaryMax,
     active: body.active !== false,
     googleForm: existing?.googleForm,
+    // Left empty in the form: the job uses RESUME_PASS_MARK.
+    screening: passMark === null && minExperience === null ? undefined : { passMark: passMark ?? config.defaultPassMark, minExperience },
   };
 }
 

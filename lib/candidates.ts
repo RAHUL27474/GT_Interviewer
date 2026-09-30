@@ -60,6 +60,7 @@ export function toSummary(c: Candidate): CandidateSummary {
     interrupted: Boolean(c.interruption),
     integrity: computeIntegrity(c.proctoring.events),
     invite: inviteState(c),
+    screening: c.screening ? { score: c.screening.score, decision: c.screening.decision } : null,
   };
 }
 

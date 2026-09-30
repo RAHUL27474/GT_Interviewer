@@ -97,7 +97,7 @@ export function loginDetailsMail(
   const deadline = formatDeadline(opts.expiresAt, opts.timeZone);
   const intro = opts.reinterview
     ? `HR has approved a new attempt at your video interview for ${c.jobTitle}. You'll get new questions, and your old password no longer works.`
-    : `Thank you for applying for ${c.jobTitle}. Your AI video interview is ready.`;
+    : `Good news: you've been shortlisted for ${c.jobTitle}. The next step is a short AI video interview, which you can take whenever suits you within the time below.`;
   const needs =
     "Use a laptop or desktop with a webcam and microphone (Google Chrome or Microsoft Edge), in a quiet place. " +
     "You'll be asked to share your entire screen and stay in fullscreen. Once started, the interview can't be paused or restarted.";
@@ -130,9 +130,45 @@ export function loginDetailsMail(
 <p>${escapeHtml(opts.company)}</p>`;
   return {
     to: c.email,
-    subject: `${opts.reinterview ? "New attempt: " : ""}Your video interview for ${oneLine(c.jobTitle)} - ${oneLine(opts.company)}`,
+    subject: opts.reinterview
+      ? `New attempt: your video interview for ${oneLine(c.jobTitle)} - ${oneLine(opts.company)}`
+      : `You're shortlisted: video interview for ${oneLine(c.jobTitle)} - ${oneLine(opts.company)}`,
     text,
     html,
+  };
+}
+
+/** Sent as soon as the application arrives. */
+export function applicationReceivedMail(
+  c: Pick<Candidate, "fullName" | "email" | "jobTitle">,
+  opts: { company: string; decisionHours: number },
+): Mail {
+  const within = opts.decisionHours >= 1 ? `${opts.decisionHours} hour${opts.decisionHours === 1 ? "" : "s"}` : "a short while";
+  const lines = [
+    `Thank you for applying for ${c.jobTitle}. We've received your application and resume.`,
+    `We're reviewing it now, and you'll hear from us by email within about ${within}. If you're shortlisted, that email will include login details for a short AI video interview.`,
+    "There's nothing else you need to do for now.",
+  ];
+  return {
+    to: c.email,
+    subject: `Application received: ${oneLine(c.jobTitle)} - ${oneLine(opts.company)}`,
+    text: [`Hi ${oneLine(c.fullName)},`, "", ...lines.flatMap((l) => [l, ""]), opts.company].join("\n"),
+    html: `<p>Hi ${escapeHtml(c.fullName)},</p>${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("")}<p>${escapeHtml(opts.company)}</p>`,
+  };
+}
+
+/** Sent when the application isn't taken forward. Deliberately general: screening reasons stay with HR. */
+export function rejectionMail(c: Pick<Candidate, "fullName" | "email" | "jobTitle">, opts: { company: string }): Mail {
+  const lines = [
+    `Thank you for your interest in the ${c.jobTitle} role and for the time you took to apply.`,
+    "We've carefully reviewed your application, and we won't be taking it forward for this position at this time.",
+    "We'll keep your details on file and may contact you if a suitable role opens up. We wish you every success in your job search.",
+  ];
+  return {
+    to: c.email,
+    subject: `Your application for ${oneLine(c.jobTitle)} - ${oneLine(opts.company)}`,
+    text: [`Hi ${oneLine(c.fullName)},`, "", ...lines.flatMap((l) => [l, ""]), "Best regards,", opts.company].join("\n"),
+    html: `<p>Hi ${escapeHtml(c.fullName)},</p>${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("")}<p>Best regards,<br>${escapeHtml(opts.company)}</p>`,
   };
 }
 

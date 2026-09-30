@@ -50,6 +50,7 @@ export default async function AdminPage({
       <Dashboard
         initialTab={params.tab === "jobs" ? "jobs" : "candidates"}
         google={google}
+        defaultPassMark={config.defaultPassMark}
         me={toPublic(user)}
         candidates={candidates.map(toSummary)}
         jobs={await visibleJobs(user, jobs)}

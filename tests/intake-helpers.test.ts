@@ -91,3 +91,17 @@ test("invite states", () => {
   assert.equal(inviteState({ status: "completed", access: sent }, now), null);
   assert.equal(inviteState({ status: "ready" }, now), null);
 });
+
+test("screening decisions", async () => {
+  const { decide, screeningRules } = await import("../lib/screening");
+  const rules = { passMark: 60, minExperience: 2 };
+  const rating = (score: number) => ({ score, summary: "s", strengths: [], gaps: [] });
+  assert.equal(decide(rating(60), { totalExperience: 3 }, rules).decision, "selected");
+  assert.equal(decide(rating(59), { totalExperience: 3 }, rules).decision, "rejected");
+  assert.equal(decide(rating(95), { totalExperience: 1 }, rules).decision, "rejected");
+  const unread = decide(null, { totalExperience: 3 }, rules, "Link is private.");
+  assert.equal(unread.decision, "review");
+  assert.match(unread.reasons[0], /Link is private/);
+  assert.deepEqual(screeningRules({}, 55), { passMark: 55, minExperience: null });
+  assert.deepEqual(screeningRules({ screening: rules }), rules);
+});

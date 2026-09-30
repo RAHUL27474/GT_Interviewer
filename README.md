@@ -2,7 +2,7 @@
 
 Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Claude API (Gemini and Hugging Face for testing)
 
-HR creates a job in the dashboard, and the app makes a **Google Form** for it. HR shares the form link. When someone applies, the app picks up the response within a minute, reads their resume from the link they pasted, and the AI writes their interview questions. **30 minutes later** the applicant is emailed a login and a random password, and has **24 hours** to start the **video interview**: an AI interviewer reads each question aloud and the candidate answers on camera. The AI then grades the transcribed answers. HR sees ranked results and can watch every answer on the dashboard.
+HR creates a job in the dashboard, and the app makes a **Google Form** for it. HR shares the form link. When someone applies, the app picks up the response within a minute and emails them that it arrived. The AI then **screens the resume** against the job description. **2 hours later** the applicant gets the decision: if shortlisted, an email with a login and a random password, and **24 hours** to start the **video interview**; if not, a polite rejection. In the video interview an AI interviewer reads each question aloud and the candidate answers on camera. The AI then grades the transcribed answers. HR sees ranked results and can watch every answer on the dashboard.
 
 ## Setup
 
@@ -44,7 +44,13 @@ Done once, by whoever manages the company Google account. Until it's done, the a
 
 - **Creating a job** with "Create a Google Form" ticked makes a form with the job description and these questions: name, phone, experience, city, current and expected CTC, joining time, resume link and LinkedIn. Google collects and checks the email address itself. Edit the job and the form's title and description follow; close or delete the job and the form stops taking responses. You can restyle the form in Google Forms, but don't delete or re-type its questions, or the app can't match the answers.
 - **Every minute** the app reads new responses of open jobs (`FORM_POLL_SECONDS`). Each becomes a candidate. The resume is downloaded from the pasted link: Google Drive and Google Docs sharing links work when shared as "Anyone with the link"; any other direct `https://` link to a PDF or Word file works too. If the resume can't be read, the questions come from the job description only, and the dashboard says why. Responses that can't be used (no valid email, or the same email already applied for that job) are listed under the job.
-- **`INVITE_DELAY_MINUTES` (30) after applying**, the candidate is emailed the login page, their email and a random 10-character password. It's sent from the connected account's Gmail, or through SMTP if that's set.
+- **Straight away**, the applicant gets an **"Application received"** email saying they'll hear back within about 2 hours.
+- **Resume screening:** the AI rates the resume 0–100 against the job description (job-related skills and experience only; personal characteristics are ignored), with a short summary, strengths and gaps for HR. Each job has a **pass mark** (default `RESUME_PASS_MARK`, 60) and an optional **minimum experience**:
+  - rated at or above the pass mark → **Shortlisted** (interview questions are written now)
+  - below the pass mark, or less experience than the minimum → **Not selected**
+  - resume couldn't be read → **Needs review**: nothing more is sent until HR clicks **Shortlist & invite** or **Reject**, so a private Drive link doesn't cost a good applicant the interview
+- **`DECISION_DELAY_MINUTES` (120) after applying**, the decision email goes out: the shortlisted get the login page, their email and a random 10-character password; the rest get a polite rejection that doesn't mention the screening reasons. Emails are sent from the connected account's Gmail, or through SMTP if that's set.
+- **HR can override** any decision from the candidate panel at any time before the interview starts: **Shortlist & invite** (sends the login now) or **Reject** (sends the rejection now, and any login already sent stops working).
 - **They must start within `INTERVIEW_ACCESS_HOURS` (24)** of that email. The login page and interview page show the deadline; afterwards the password stops working and the dashboard shows **Expired**. Once started, the interview runs to the end normally.
 - **In the candidate panel** HR sees where the invite stands (scheduled, sent, failed, expired) and can click **Send new login details**, which makes a new password (the old one stops working) and a fresh 24-hour window. If the email can't be sent, the password is shown to HR once, to pass on by phone or WhatsApp.
 - Passwords are stored hashed, the same way as staff passwords, and repeated wrong attempts lock that email for 10 minutes.
@@ -148,7 +154,9 @@ Emails go out from the connected Google account's Gmail. To send from another ma
 
 | When | Who gets it |
 |---|---|
-| `INVITE_DELAY_MINUTES` after applying | The candidate: login page, email, password, the deadline to start, and what they need |
+| As soon as the application is read | The applicant: "Application received", you'll hear back within about 2 hours |
+| `DECISION_DELAY_MINUTES` (2 h) after applying, if shortlisted | The applicant: "You're shortlisted", with the login page, email, password, the deadline to start, and what they need |
+| `DECISION_DELAY_MINUTES` after applying, if not selected | The applicant: a polite rejection, without the screening reasons |
 | HR clicks **Send new login details** or **Allow re-interview** | The candidate: a new password and a new deadline |
 | An interview is graded, or grading fails | Everyone in `HR_NOTIFY_EMAILS`: name, role, recommendation and total, with a dashboard link |
 

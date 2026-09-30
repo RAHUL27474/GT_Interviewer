@@ -23,6 +23,73 @@ function loginResultText(r: LoginResult) {
 
 const when = (iso: string) => new Date(iso).toLocaleString();
 
+const DECISION: Record<NonNullable<Candidate["screening"]>["decision"], { label: string; tone: "good" | "bad" | "warn" }> = {
+  selected: { label: "Shortlisted", tone: "good" },
+  rejected: { label: "Not selected", tone: "bad" },
+  review: { label: "Needs review", tone: "warn" },
+};
+
+/** The resume screening result, which emails went out, and HR's override buttons. */
+function ScreeningPanel({ c, onDecide }: { c: Candidate; onDecide: (d: "selected" | "rejected") => void }) {
+  const s = c.screening!;
+  const d = DECISION[s.decision];
+  const notStarted = c.status === "ready" || c.status === "rejected";
+  const decisionEmail =
+    s.decision === "rejected"
+      ? s.rejectionEmailedAt
+        ? `Rejection email sent ${when(s.rejectionEmailedAt)}.`
+        : `Rejection email due ${when(c.access?.inviteAt ?? s.at)}.`
+      : null;
+  return (
+    <div className="space-y-2 rounded-lg border border-slate-200 p-4 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="font-semibold">Resume screening</h3>
+        <Pill tone={d.tone}>{d.label}</Pill>
+        {s.score !== null && <span className="text-slate-500">AI rating {s.score}/100</span>}
+        {s.decidedBy && <span className="text-slate-500">· decided by {s.decidedBy}</span>}
+        {notStarted && (
+          <span className="ml-auto flex gap-2">
+            {s.decision !== "selected" && <Button onClick={() => onDecide("selected")}>Shortlist &amp; invite</Button>}
+            {s.decision !== "rejected" && (
+              <Button variant="ghost" onClick={() => onDecide("rejected")} className="!border-red-200 !text-red-600 hover:!bg-red-50">
+                Reject
+              </Button>
+            )}
+          </span>
+        )}
+      </div>
+      <ul className="list-disc pl-5 text-slate-600">
+        {s.reasons.map((r) => (
+          <li key={r}>{r}</li>
+        ))}
+      </ul>
+      {s.summary && <p className="text-slate-700">{s.summary}</p>}
+      {(s.strengths.length > 0 || s.gaps.length > 0) && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-medium text-emerald-700">Strengths</p>
+            <ul className="list-disc pl-5">{s.strengths.map((x) => <li key={x}>{x}</li>)}</ul>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-red-700">Gaps</p>
+            <ul className="list-disc pl-5">{s.gaps.map((x) => <li key={x}>{x}</li>)}</ul>
+          </div>
+        </div>
+      )}
+      <p className="text-xs text-slate-500">
+        {s.receivedEmailedAt
+          ? `"Application received" email sent ${when(s.receivedEmailedAt)}.`
+          : s.receivedEmailError
+            ? `"Application received" email failed: ${s.receivedEmailError}`
+            : ""}{" "}
+        {decisionEmail}
+        {s.decision === "review" && " No email goes out until you shortlist or reject."}
+        {c.access?.emailError && s.decision === "rejected" && ` Last attempt failed: ${c.access.emailError}`}
+      </p>
+    </div>
+  );
+}
+
 /** Where the interview login stands, with a button to send new details. */
 function LoginStatus({ c, onSendLogin }: { c: Candidate; onSendLogin: () => void }) {
   const a = c.access;
@@ -117,6 +184,31 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged, canDele
     alert(loginResultText(result));
   }
 
+  async function decide(decision: "selected" | "rejected") {
+    const question =
+      decision === "selected"
+        ? "Shortlist this applicant? Their interview questions are written and the login email is sent now."
+        : "Reject this applicant? The rejection email is sent now (if it hasn't been already), and any login they have stops working.";
+    if (!confirm(question)) return;
+    setError("");
+    const res = await fetch(`/api/admin/candidates/${encodeURIComponent(id)}/screening`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }),
+    });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) return setError(result.error || "Could not save the decision.");
+    await load();
+    onChanged();
+    alert(
+      decision === "selected"
+        ? loginResultText(result)
+        : result.rejectionSent
+          ? "Rejected. The rejection email has been sent."
+          : "Rejected. The rejection email couldn't be sent yet; it will be retried automatically.",
+    );
+  }
+
   async function deleteCandidate() {
     if (!confirm("Permanently delete this candidate, their resume and all interview recordings? This can't be undone.")) return;
     const res = await fetch(`/api/admin/candidates/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -147,6 +239,7 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged, canDele
             onReevaluate={reevaluate}
             onReinterview={allowReinterview}
             onSendLogin={sendLogin}
+            onDecide={decide}
             onDelete={canDelete ? deleteCandidate : undefined}
           />
         )}
@@ -161,6 +254,7 @@ function Detail({
   onReevaluate,
   onReinterview,
   onSendLogin,
+  onDecide,
   onDelete,
 }: {
   c: Candidate;
@@ -168,6 +262,7 @@ function Detail({
   onReevaluate: () => void;
   onReinterview: () => void;
   onSendLogin: () => void;
+  onDecide: (decision: "selected" | "rejected") => void;
   onDelete?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -226,10 +321,11 @@ function Detail({
         </div>
       </div>
 
-      {c.status === "ready" && <LoginStatus c={c} onSendLogin={onSendLogin} />}
+      {c.screening && <ScreeningPanel c={c} onDecide={onDecide} />}
+      {c.status === "ready" && c.screening?.decision !== "review" && <LoginStatus c={c} onSendLogin={onSendLogin} />}
       {c.resumeProblem && (
         <Alert tone="info">
-          Resume not read: {c.resumeProblem} The questions were written from the job description only.
+          Resume not read: {c.resumeProblem}
         </Alert>
       )}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import type { GoogleStatus, Job } from "@/lib/types";
 import { Alert, Button, Card, CardTitle, Field, inputClass, Pill } from "../ui";
 
@@ -311,9 +311,6 @@ function JobForm({
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  // Bring the form into view when it opens (the job may be far down the list).
-  useEffect(() => ref.current?.scrollIntoView({ behavior: "smooth", block: "start" }), []);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -346,7 +343,6 @@ function JobForm({
   }
 
   return (
-    <div ref={ref} className="scroll-mt-4">
     <Card className="ring-2 ring-brand-100">
       <CardTitle>{job ? "Edit job" : "New job"}</CardTitle>
       <form onSubmit={onSubmit} className="space-y-4">
@@ -419,6 +415,5 @@ function JobForm({
         </div>
       </form>
     </Card>
-    </div>
   );
 }

@@ -29,9 +29,15 @@ export function LoginForm() {
   }
 
   return (
-    <Card className="mx-auto mt-10 max-w-sm">
+    <Card className="mx-auto mt-12 w-full max-w-sm">
+      <div className="mb-4 grid size-11 place-items-center rounded-xl bg-brand-soft text-brand-fg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-5" aria-hidden>
+          <rect x="4" y="11" width="16" height="10" rx="2" />
+          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        </svg>
+      </div>
       <CardTitle>Staff sign in</CardTitle>
-      <p className="-mt-2 mb-4 text-sm text-slate-500">For HR and Managers. Applicants log in at the home page with the details emailed to them.</p>
+      <p className="-mt-2 mb-4 text-sm text-fg-3">For HR and Managers. Applicants log in at the home page with the details emailed to them.</p>
       <form onSubmit={onSubmit} className="space-y-4">
         {error && <Alert>{error}</Alert>}
         <Field label="Email" htmlFor="email">
@@ -57,8 +63,8 @@ export function LoginForm() {
             className={inputClass}
           />
         </Field>
-        <Button type="submit" disabled={busy} className="w-full">
-          Sign in
+        <Button type="submit" disabled={busy} className="w-full py-2.5">
+          {busy ? "Signing in…" : "Sign in"}
         </Button>
       </form>
     </Card>

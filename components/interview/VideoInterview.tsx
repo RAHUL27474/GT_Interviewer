@@ -385,7 +385,7 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
             Reason: {state.interruptionReason.replace(/^(The )?[Cc]andidate /, "you ").replace(/^you/, "You")}.
           </p>
         )}
-        <p className="mt-3 font-semibold text-slate-800">
+        <p className="mt-3 font-semibold text-fg">
           To request a re-interview, please contact {state.hrContact}.
         </p>
       </EndCard>
@@ -405,7 +405,7 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
           {camera.stream ? (
             <video ref={videoEl} autoPlay muted playsInline className="size-full -scale-x-100 object-cover" />
           ) : (
-            <div className="grid size-full place-items-center p-6 text-center text-sm text-slate-400">
+            <div className="grid size-full place-items-center p-6 text-center text-sm text-fg-4">
               Your camera preview will appear here.
             </div>
           )}
@@ -479,13 +479,13 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
             />
           ) : (
             <>
-              <div className="flex items-center justify-between text-sm text-slate-500">
+              <div className="flex items-center justify-between text-sm text-fg-3">
                 <span>
                   Question {q ? q.index + 1 : state.total} of {state.total}
                 </span>
                 <PhaseBadge phase={phase} />
               </div>
-              <div className="mt-3 mb-5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div className="mt-3 mb-5 h-1.5 overflow-hidden rounded-full bg-surface-3">
                 <div
                   className="h-full bg-brand-600 transition-all"
                   style={{ width: `${((q?.index ?? state.total) / state.total) * 100}%` }}
@@ -496,7 +496,7 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
                 <span
                   className={cn(
                     "grid size-10 shrink-0 place-items-center rounded-full bg-brand-600 text-sm font-bold text-white",
-                    phase === "asking" && "animate-pulse ring-4 ring-brand-100",
+                    phase === "asking" && "animate-pulse ring-4 ring-brand-soft-2",
                   )}
                 >
                   AI
@@ -505,11 +505,11 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
               </div>
 
               <div className="mt-auto pt-6">
-                {phase === "asking" && <p className="text-sm text-slate-500">The interviewer is reading the question…</p>}
+                {phase === "asking" && <p className="text-sm text-fg-3">The interviewer is reading the question…</p>}
 
                 {phase === "prep" && (
                   <div className="space-y-3">
-                    <p className="text-sm text-slate-600">
+                    <p className="text-sm text-fg-2">
                       Take a moment to think. Recording starts automatically in{" "}
                       <strong className="tabular-nums">{secondsLeft}s</strong>.
                     </p>
@@ -526,7 +526,7 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
 
                 {phase === "recording" && (
                   <div className="space-y-3">
-                    <p className="text-sm text-slate-600">Speak clearly and look at the camera. Give specific examples.</p>
+                    <p className="text-sm text-fg-2">Speak clearly and look at the camera. Give specific examples.</p>
                     <Button onClick={finishAnswer} disabled={elapsed < MIN_ANSWER_SECONDS} className="w-full">
                       {q && q.index + 1 === state.total ? "Finish interview" : "Finish answer →"}
                     </Button>
@@ -535,8 +535,8 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
 
                 {phase === "uploading" && (
                   <div className="space-y-3">
-                    <p className="text-sm text-slate-600">{pendingForm ? "Upload failed." : "Saving your answer…"}</p>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                    <p className="text-sm text-fg-2">{pendingForm ? "Upload failed." : "Saving your answer…"}</p>
+                    <div className="h-2 overflow-hidden rounded-full bg-surface-3">
                       <div className="h-full bg-brand-600 transition-all" style={{ width: `${progress * 100}%` }} />
                     </div>
                     {pendingForm && (
@@ -548,30 +548,30 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
                 )}
 
                 {faceRules.lookAways > 0 && (
-                  <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                  <p className="mt-4 rounded-md bg-warn-soft px-3 py-2 text-xs font-medium text-warn-fg">
                     ⚠ Looked away {faceRules.lookAways} of {state.maxLookAwayWarnings} times allowed.{" "}
                     {faceRules.lookAways >= state.maxLookAwayWarnings && "Looking away again will end your interview."}
                   </p>
                 )}
                 {faceRules.personWarnings > 0 && faceRules.personSecondsLeft === null && (
-                  <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-800">
+                  <p className="mt-2 rounded-md bg-danger-soft px-3 py-2 text-xs font-medium text-danger-fg">
                     ⚠ Another person was seen on camera. If anyone appears again, your interview will end.
                   </p>
                 )}
                 {faceRules.swapWarnings > 0 && faceRules.swapSecondsLeft === null && (
-                  <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-800">
+                  <p className="mt-2 rounded-md bg-danger-soft px-3 py-2 text-xs font-medium text-danger-fg">
                     ⚠ Someone else was seen in your place. If it happens again, your interview will end.
                   </p>
                 )}
                 {guard.violations > 0 && (
-                  <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                  <p className="mt-4 rounded-md bg-warn-soft px-3 py-2 text-xs font-medium text-warn-fg">
                     ⚠ {guard.violations} of {state.maxWarnings} warnings used.{" "}
                     {guard.violations >= state.maxWarnings
                       ? "Leaving this tab or fullscreen again will end your interview."
                       : "Stay on this tab, in fullscreen."}
                   </p>
                 )}
-                <p className="mt-4 text-xs text-slate-400">
+                <p className="mt-4 text-xs text-fg-4">
                   Don&apos;t close or refresh this page. If the interview is interrupted, it will be submitted as it is.
                 </p>
               </div>
@@ -640,7 +640,7 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
             {guard.violations >= state.maxWarnings && "This is your last warning."}
           </p>
           {guard.away === "fullscreen" && (
-            <Button onClick={() => enterFullscreen()} className="bg-white px-6 py-2.5 !text-red-700 hover:bg-red-50">
+            <Button onClick={() => enterFullscreen()} className="bg-surface px-6 py-2.5 !text-danger-fg hover:bg-danger-soft">
               Return to fullscreen
             </Button>
           )}
@@ -666,24 +666,24 @@ function EndCard({
       <div
         className={cn(
           "mx-auto mb-4 grid size-14 place-items-center rounded-full text-2xl font-bold",
-          tone === "good" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600",
+          tone === "good" ? "bg-ok-soft text-ok-fg" : "bg-warn-soft text-warn-fg",
         )}
       >
         {icon}
       </div>
       <h1 className="text-2xl font-bold">{title}</h1>
-      <div className="mx-auto mt-2 max-w-lg text-slate-500">{children}</div>
-      <p className="mt-4 text-sm text-slate-400">You can close this page now. Your camera has been turned off.</p>
+      <div className="mx-auto mt-2 max-w-lg text-fg-3">{children}</div>
+      <p className="mt-4 text-sm text-fg-4">You can close this page now. Your camera has been turned off.</p>
     </Card>
   );
 }
 
 function PhaseBadge({ phase }: { phase: Phase }) {
   const map: Partial<Record<Phase, [string, string]>> = {
-    asking: ["Listening to question", "bg-brand-50 text-brand-700"],
-    prep: ["Thinking time", "bg-amber-50 text-amber-700"],
-    recording: ["Recording", "bg-red-50 text-red-700"],
-    uploading: ["Saving", "bg-slate-100 text-slate-600"],
+    asking: ["Listening to question", "bg-brand-soft text-brand-fg"],
+    prep: ["Thinking time", "bg-warn-soft text-warn-fg"],
+    recording: ["Recording", "bg-danger-soft text-danger-fg"],
+    uploading: ["Saving", "bg-surface-3 text-fg-2"],
   };
   const entry = map[phase];
   if (!entry) return null;
@@ -693,7 +693,7 @@ function PhaseBadge({ phase }: { phase: Phase }) {
 function Check({ ok, pending, children }: { ok: boolean; pending?: boolean; children: React.ReactNode }) {
   return (
     <li className="flex items-center gap-2">
-      <span className={cn("font-bold", pending ? "text-slate-400" : ok ? "text-emerald-600" : "text-red-600")}>
+      <span className={cn("font-bold", pending ? "text-fg-4" : ok ? "text-ok-fg" : "text-danger-fg")}>
         {pending ? "…" : ok ? "✓" : "✗"}
       </span>
       {children}
@@ -736,7 +736,7 @@ function SetupPanel({
     return (
       <div className="space-y-3">
         <h1 className="text-xl font-bold">Please switch browser</h1>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-fg-2">
           This video interview needs a laptop or desktop computer (phones and tablets can&apos;t share their screen),
           ideally with <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong>. Copy this page&apos;s link and
           open it there.
@@ -767,10 +767,10 @@ function SetupPanel({
   return (
     <div className="flex h-full flex-col">
       <h1 className="text-xl font-bold">Hi {state.fullName.split(" ")[0]} 👋</h1>
-      <p className="mt-1 text-sm text-slate-500">
-        Video interview for <strong className="text-slate-800">{state.jobTitle}</strong>
+      <p className="mt-1 text-sm text-fg-3">
+        Video interview for <strong className="text-fg">{state.jobTitle}</strong>
       </p>
-      <ul className="mt-4 list-disc space-y-1.5 pl-5 text-sm text-slate-700">
+      <ul className="mt-4 list-disc space-y-1.5 pl-5 text-sm text-fg-2">
         <li>
           {state.total} questions. Each is read aloud, then you get {state.prepSeconds}s to think and up to{" "}
           {state.minutesPerQuestion} min to answer on camera. No retakes.
@@ -794,7 +794,7 @@ function SetupPanel({
         </li>
       </ul>
 
-      <ul className="mt-4 space-y-1 rounded-lg bg-slate-50 p-3 text-sm">
+      <ul className="mt-4 space-y-1 rounded-lg bg-surface-2 p-3 text-sm">
         <Check ok={cameraOn} pending={!cameraOn}>Camera and microphone on</Check>
         {cameraOn &&
           (proctorStatus === "unavailable" ? (
@@ -813,7 +813,7 @@ function SetupPanel({
             </Check>
           ))}
         <Check ok={screenShared} pending={!screenShared}>
-          Entire screen shared{!screenShared && step === 2 && <span className="text-slate-500"> (choose &quot;Entire screen&quot;)</span>}
+          Entire screen shared{!screenShared && step === 2 && <span className="text-fg-3"> (choose &quot;Entire screen&quot;)</span>}
         </Check>
         <Check ok={isFullscreen} pending={!isFullscreen}>Fullscreen on</Check>
         {secondScreen && <Check ok={false}>Second monitor detected: please disconnect it (this is recorded)</Check>}

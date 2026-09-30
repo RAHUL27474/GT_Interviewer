@@ -23,7 +23,7 @@ export default async function InterviewPage({ params }: { params: Promise<{ id: 
         {accessExpired(candidate) ? (
           <Card className="mx-auto max-w-lg">
             <h1 className="text-xl font-bold">The time to start has ended</h1>
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 text-sm text-fg-2">
               This interview had to be started by {new Date(candidate.access!.expiresAt!).toLocaleString()}. If you&apos;d
               still like to take it, please contact {config.hrContact}.
             </p>

@@ -41,42 +41,42 @@ function ScreeningPanel({ c, onDecide }: { c: Candidate; onDecide: (d: "selected
         : `Rejection email due ${when(c.access?.inviteAt ?? s.at)}.`
       : null;
   return (
-    <div className="space-y-2 rounded-lg border border-slate-200 p-4 text-sm">
+    <div className="space-y-2 rounded-lg border border-line p-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-semibold">Resume screening</h3>
         <Pill tone={d.tone}>{d.label}</Pill>
-        {s.score !== null && <span className="text-slate-500">AI rating {s.score}/100</span>}
-        {s.decidedBy && <span className="text-slate-500">· decided by {s.decidedBy}</span>}
+        {s.score !== null && <span className="text-fg-3">AI rating {s.score}/100</span>}
+        {s.decidedBy && <span className="text-fg-3">· decided by {s.decidedBy}</span>}
         {notStarted && (
           <span className="ml-auto flex gap-2">
             {s.decision !== "selected" && <Button onClick={() => onDecide("selected")}>Shortlist &amp; invite</Button>}
             {s.decision !== "rejected" && (
-              <Button variant="ghost" onClick={() => onDecide("rejected")} className="!border-red-200 !text-red-600 hover:!bg-red-50">
+              <Button variant="ghost" onClick={() => onDecide("rejected")} className="!border-danger-line !text-danger-fg hover:!bg-danger-soft">
                 Reject
               </Button>
             )}
           </span>
         )}
       </div>
-      <ul className="list-disc pl-5 text-slate-600">
+      <ul className="list-disc pl-5 text-fg-2">
         {s.reasons.map((r) => (
           <li key={r}>{r}</li>
         ))}
       </ul>
-      {s.summary && <p className="text-slate-700">{s.summary}</p>}
+      {s.summary && <p className="text-fg-2">{s.summary}</p>}
       {(s.strengths.length > 0 || s.gaps.length > 0) && (
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <p className="text-xs font-medium text-emerald-700">Strengths</p>
+            <p className="text-xs font-medium text-ok-fg">Strengths</p>
             <ul className="list-disc pl-5">{s.strengths.map((x) => <li key={x}>{x}</li>)}</ul>
           </div>
           <div>
-            <p className="text-xs font-medium text-red-700">Gaps</p>
+            <p className="text-xs font-medium text-danger-fg">Gaps</p>
             <ul className="list-disc pl-5">{s.gaps.map((x) => <li key={x}>{x}</li>)}</ul>
           </div>
         </div>
       )}
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-fg-3">
         {s.receivedEmailedAt
           ? `"Application received" email sent ${when(s.receivedEmailedAt)}.`
           : s.receivedEmailError
@@ -104,7 +104,7 @@ function LoginStatus({ c, onSendLogin }: { c: Candidate; onSendLogin: () => void
           ? `Didn't start in time: login expired ${when(a.expiresAt!)}.`
           : `Login ${a.delivery === "manual" ? "details given to HR to pass on" : "emailed"} ${when(a.invitedAt!)}; must start by ${when(a.expiresAt!)}.`;
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface-2 p-3 text-sm">
       <span className="flex-1">{text}</span>
       <Button variant="secondary" onClick={onSendLogin}>
         {state === "scheduled" ? "Send login details now" : "Send new login details"}
@@ -226,12 +226,12 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged, canDele
   return (
     <>
       <div className="fixed inset-0 z-30 bg-slate-900/20" onClick={onClose} />
-      <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-3xl overflow-y-auto border-l border-slate-200 bg-white p-6 shadow-2xl">
+      <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-3xl overflow-y-auto border-l border-line bg-surface p-6 shadow-2xl">
         <Button variant="ghost" onClick={onClose} className="float-right" aria-label="Close">
           ✕
         </Button>
         {error && <Alert>{error}</Alert>}
-        {!c && !error && <p className="text-slate-400">Loading…</p>}
+        {!c && !error && <p className="text-fg-4">Loading…</p>}
         {c && (
           <Detail
             c={c}
@@ -287,7 +287,7 @@ function Detail({
     [
       "LinkedIn",
       /^https?:\/\//.test(c.linkedin) ? (
-        <a href={c.linkedin} target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline">
+        <a href={c.linkedin} target="_blank" rel="noopener noreferrer" className="text-brand-fg hover:underline">
           {c.linkedin}
         </a>
       ) : (
@@ -297,7 +297,7 @@ function Detail({
     [
       "Resume link",
       c.resumeUrl && /^https?:\/\//.test(c.resumeUrl) ? (
-        <a href={c.resumeUrl} target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline">
+        <a href={c.resumeUrl} target="_blank" rel="noopener noreferrer" className="text-brand-fg hover:underline">
           {c.resumeUrl}
         </a>
       ) : (
@@ -316,7 +316,7 @@ function Detail({
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-bold">{c.fullName}</h2>
-        <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
+        <div className="mt-1 flex items-center gap-2 text-sm text-fg-3">
           {c.jobTitle} <Pill tone={badge.tone}>{badge.label}</Pill>
         </div>
       </div>
@@ -330,7 +330,7 @@ function Detail({
       )}
 
       {c.interruption && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div className="rounded-lg border border-danger-line bg-danger-soft p-3 text-sm text-danger-fg">
           <p className="font-semibold">Interview interrupted, auto-submitted with {c.interruption.answeredCount} of{" "}
             {c.questions.length} answers</p>
           <p className="mt-0.5">
@@ -349,7 +349,7 @@ function Detail({
             <ScoreBox label={s.joining.label} value={<Signed value={s.joining.points} />} sub="Joining" />
             <ScoreBox label="" value={<Signed value={s.salary.points} />} sub="Salary" />
           </div>
-          <ul className="mt-2 list-disc pl-5 text-xs text-slate-500">
+          <ul className="mt-2 list-disc pl-5 text-xs text-fg-3">
             {s.salary.notes.map((n) => (
               <li key={n}>{n}</li>
             ))}
@@ -370,7 +370,7 @@ function Detail({
             </a>
             <a
               href={`/api/admin/candidates/${encodeURIComponent(c.id)}/resume`}
-              className="inline-flex items-center rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-600 hover:bg-brand-50"
+              className="inline-flex items-center rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-fg hover:bg-brand-soft"
             >
               Download resume
             </a>
@@ -408,7 +408,7 @@ function Detail({
           {copied ? "Copied ✓" : c.access ? "Copy login page link" : "Copy interview link"}
         </Button>
         {onDelete && (
-          <Button variant="ghost" onClick={onDelete} className="!border-red-200 !text-red-600 hover:!bg-red-50">
+          <Button variant="ghost" onClick={onDelete} className="!border-danger-line !text-danger-fg hover:!bg-danger-soft">
             Delete candidate
           </Button>
         )}
@@ -417,7 +417,7 @@ function Detail({
       <dl className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-1.5 text-sm">
         {facts.map(([k, v]) => (
           <div key={k} className="contents">
-            <dt className="text-slate-500">{k}</dt>
+            <dt className="text-fg-3">{k}</dt>
             <dd className="break-all">{v}</dd>
           </div>
         ))}
@@ -426,13 +426,13 @@ function Detail({
       <div>
         <h3 className="mb-2 font-semibold">Screen recording</h3>
         {mediaGone && (
-          <p className="mb-2 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-600">
+          <p className="mb-2 rounded-md bg-surface-3 px-3 py-2 text-sm text-fg-2">
             Videos, snapshots and the screen recording were deleted automatically on {day(c.mediaDeletedAt!)}. The
             transcripts, scores and proctoring timeline are kept.
           </p>
         )}
         {!mediaGone && c.mediaDeletesOn && (
-          <p className="mb-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <p className="mb-2 rounded-md bg-warn-soft px-3 py-2 text-xs text-warn-fg">
             Videos, snapshots and the screen recording will be deleted automatically on {day(c.mediaDeletesOn)}.
           </p>
         )}
@@ -440,7 +440,7 @@ function Detail({
           <div className="space-y-3">
             {c.screenRecording.segments.map((seg, i) => (
               <div key={seg.file}>
-                <p className="mb-1 text-xs text-slate-500">
+                <p className="mb-1 text-xs text-fg-3">
                   {c.screenRecording!.segments.length > 1 && `Part ${i + 1} · `}
                   started {offset(seg.startedAt)} into the interview · {(seg.bytes / 1024 / 1024).toFixed(1)} MB
                   {i > 0 && " · re-shared after sharing was stopped"}
@@ -448,13 +448,13 @@ function Detail({
                 <video src={media(seg.file)} controls preload="metadata" className="aspect-video w-full rounded-md bg-slate-900" />
               </div>
             ))}
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-fg-3">
               Covers the whole interview, including thinking time. Seeking may be limited; press play and use the speed
               control to skim.
             </p>
           </div>
         ) : (
-          <p className="text-sm text-slate-400">No screen recording.</p>
+          <p className="text-sm text-fg-4">No screen recording.</p>
         )}
       </div>
 
@@ -463,7 +463,7 @@ function Detail({
           Live proctoring <IntegrityPill level={integrity.level} />
         </h3>
         {c.proctoring.events.length === 0 ? (
-          <p className="text-sm text-slate-400">No proctoring events recorded.</p>
+          <p className="text-sm text-fg-4">No proctoring events recorded.</p>
         ) : (
           <>
             <div className="mb-3 flex flex-wrap gap-2">
@@ -473,25 +473,25 @@ function Detail({
                 </Pill>
               ))}
             </div>
-            <ol className="max-h-80 space-y-2 overflow-y-auto rounded-lg border border-slate-200 p-3 text-sm">
+            <ol className="max-h-80 space-y-2 overflow-y-auto rounded-lg border border-line p-3 text-sm">
               {c.proctoring.events.map((e, i) => (
                 <li key={i} className="flex items-start gap-3">
-                  <span className="w-12 shrink-0 font-mono text-xs text-slate-500 tabular-nums">{offset(e.at)}</span>
+                  <span className="w-12 shrink-0 font-mono text-xs text-fg-3 tabular-nums">{offset(e.at)}</span>
                   <div className="flex-1">
                     <span className="font-medium">{PROCTOR_EVENTS[e.type].label}</span>
-                    <span className="text-slate-500">
+                    <span className="text-fg-3">
                       {e.questionIndex !== null && ` · Q${e.questionIndex + 1}`} · {e.detail}
                     </span>
                   </div>
                   {e.snapshot && !mediaGone && (
                     <a href={media(e.snapshot)} target="_blank" rel="noopener noreferrer">
-                      <img src={media(e.snapshot)} alt="Snapshot at event" className="h-12 rounded border border-slate-200" />
+                      <img src={media(e.snapshot)} alt="Snapshot at event" className="h-12 rounded border border-line" />
                     </a>
                   )}
                 </li>
               ))}
             </ol>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-fg-3">
               Times are from interview start. Flags are signals for review, not proof. Check the video before deciding.
             </p>
           </>
@@ -501,20 +501,20 @@ function Detail({
       {ev && (
         <div>
           <h3 className="mb-1 font-semibold">AI summary</h3>
-          <p className="text-sm text-slate-700">{ev.summary}</p>
+          <p className="text-sm text-fg-2">{ev.summary}</p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <BulletList title="Strengths" items={ev.strengths} />
             <BulletList title="Concerns" items={ev.concerns} />
           </div>
           {ev.proctoringNotes?.length > 0 && (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <h4 className="mb-1 text-sm font-semibold text-amber-800">⚠ Proctoring flags (from webcam snapshots)</h4>
-              <ul className="list-disc space-y-1 pl-5 text-sm text-amber-800">
+            <div className="mt-4 rounded-lg border border-warn-line bg-warn-soft p-3">
+              <h4 className="mb-1 text-sm font-semibold text-warn-fg">⚠ Proctoring flags (from webcam snapshots)</h4>
+              <ul className="list-disc space-y-1 pl-5 text-sm text-warn-fg">
                 {ev.proctoringNotes.map((x) => (
                   <li key={x}>{x}</li>
                 ))}
               </ul>
-              <p className="mt-1 text-xs text-amber-700">Not included in the score. Watch the videos before deciding.</p>
+              <p className="mt-1 text-xs text-warn-fg">Not included in the score. Watch the videos before deciding.</p>
             </div>
           )}
         </div>
@@ -527,15 +527,15 @@ function Detail({
             const a = c.answers[i];
             const e = ev?.evaluations[i];
             return (
-              <div key={i} className="rounded-lg border border-slate-200 p-4">
+              <div key={i} className="rounded-lg border border-line p-4">
                 <p className="font-semibold">
                   Q{i + 1}. {q.question}
                 </p>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="mt-0.5 text-xs text-fg-3">
                   {q.based_on === "resume" ? "From resume" : "From JD"} · {q.focus}
                   {a && ` · ${Math.round((a.timeTakenSec / 60) * 10) / 10} min`}
                 </p>
-                {!a && <p className="my-3 text-sm text-slate-400 italic">Not answered yet</p>}
+                {!a && <p className="my-3 text-sm text-fg-4 italic">Not answered yet</p>}
                 {a?.video && !mediaGone && (
                   <video
                     src={media(a.video)}
@@ -546,29 +546,29 @@ function Detail({
                 )}
                 {a && (
                   <div className="mb-3">
-                    <p className="mb-1 text-xs font-medium text-slate-500">
+                    <p className="mb-1 text-xs font-medium text-fg-3">
                       Auto transcript{a.transcriptSource === "whisper" && " (Whisper)"}
                       {a.transcriptSource === "gemini" && " (Gemini)"} (may contain recognition errors)
                     </p>
-                    <div className="rounded-md bg-slate-50 p-3 text-sm whitespace-pre-wrap">
-                      {a.transcript || <em className="text-slate-400">(no speech detected; watch the video)</em>}
+                    <div className="rounded-md bg-surface-2 p-3 text-sm whitespace-pre-wrap">
+                      {a.transcript || <em className="text-fg-4">(no speech detected; watch the video)</em>}
                     </div>
                   </div>
                 )}
                 {a && a.snapshots.length > 0 && !mediaGone && (
                   <div className="mb-3 flex gap-2">
                     {a.snapshots.map((s) => (
-                      <img key={s} src={media(s)} alt="Webcam snapshot" className="h-16 rounded border border-slate-200" />
+                      <img key={s} src={media(s)} alt="Webcam snapshot" className="h-16 rounded border border-line" />
                     ))}
                   </div>
                 )}
                 {e && (
                   <p className="text-sm">
                     <Pill tone={e.score >= 7 ? "good" : e.score >= 4 ? "warn" : "bad"}>{e.score}/10</Pill>{" "}
-                    <span className="text-slate-600">{e.feedback}</span>
+                    <span className="text-fg-2">{e.feedback}</span>
                   </p>
                 )}
-                <details className="mt-2 text-xs text-slate-500">
+                <details className="mt-2 text-xs text-fg-3">
                   <summary className="cursor-pointer">What a strong answer covers</summary>
                   <ul className="mt-1 list-disc pl-5">
                     {q.expected_points.map((p) => (
@@ -587,9 +587,9 @@ function Detail({
 
 function ScoreBox({ label, value, sub }: { label: React.ReactNode; value: React.ReactNode; sub: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
+    <div className="rounded-lg border border-line p-3">
       <div className="text-2xl font-bold tabular-nums">{value}</div>
-      <div className="text-xs text-slate-500">{sub}</div>
+      <div className="text-xs text-fg-3">{sub}</div>
       {label && <div className="mt-1 text-xs">{label}</div>}
     </div>
   );
@@ -600,13 +600,13 @@ function BulletList({ title, items }: { title: string; items: string[] }) {
     <div>
       <h4 className="mb-1 text-sm font-semibold">{title}</h4>
       {items.length ? (
-        <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+        <ul className="list-disc space-y-1 pl-5 text-sm text-fg-2">
           {items.map((x) => (
             <li key={x}>{x}</li>
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-slate-400">None noted</p>
+        <p className="text-sm text-fg-4">None noted</p>
       )}
     </div>
   );

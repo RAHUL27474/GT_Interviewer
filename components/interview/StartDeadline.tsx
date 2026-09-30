@@ -28,7 +28,7 @@ export function StartDeadline({ startBy }: { startBy: string }) {
   const ms = Date.parse(startBy) - now;
   if (ms <= 0) {
     return (
-      <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+      <div className="mb-4 rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger-fg">
         The time to start this interview has ended. Please contact HR.
       </div>
     );
@@ -36,7 +36,7 @@ export function StartDeadline({ startBy }: { startBy: string }) {
   return (
     <div
       className={
-        "mb-4 rounded-lg px-4 py-3 text-sm " + (ms < 3_600_000 ? "bg-amber-50 text-amber-800" : "bg-brand-50 text-brand-700")
+        "mb-4 rounded-lg px-4 py-3 text-sm " + (ms < 3_600_000 ? "bg-warn-soft text-warn-fg" : "bg-brand-soft text-brand-fg")
       }
     >
       ⏳ Please start your interview before <strong>{new Date(startBy).toLocaleString()}</strong> ({left(ms)} left).

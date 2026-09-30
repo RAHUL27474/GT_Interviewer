@@ -30,9 +30,9 @@ export function CandidateLogin({ notice }: { notice?: string }) {
   }
 
   return (
-    <Card className="mx-auto mt-10 max-w-sm">
-      <CardTitle>Log in to your interview</CardTitle>
-      <p className="-mt-2 mb-4 text-sm text-slate-500">
+    <Card className="w-full md:mt-4">
+      <CardTitle>Log in</CardTitle>
+      <p className="-mt-2 mb-5 text-sm text-fg-3">
         Use the email and password from your interview email. It&apos;s sent shortly after you apply through the job&apos;s
         application form.
       </p>
@@ -62,8 +62,8 @@ export function CandidateLogin({ notice }: { notice?: string }) {
             className={inputClass}
           />
         </Field>
-        <Button type="submit" disabled={busy} className="w-full">
-          Log in
+        <Button type="submit" disabled={busy} className="w-full py-2.5">
+          {busy ? "Logging in…" : "Log in to the interview"}
         </Button>
       </form>
     </Card>

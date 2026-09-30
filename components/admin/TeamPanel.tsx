@@ -59,18 +59,18 @@ export function TeamPanel({
         {ROLES.filter((r) => r !== "superadmin" || me.role === "superadmin").map((r) => (
           <div
             key={r}
-            className={cn("rounded-xl border bg-white p-4 text-sm", r === me.role ? "border-brand-500" : "border-slate-200")}
+            className={cn("rounded-xl border bg-surface p-4 text-sm", r === me.role ? "border-brand-500" : "border-line")}
           >
             <p className="font-semibold">
-              {ROLE_LABEL[r]} {r === me.role && <span className="text-xs font-normal text-brand-600">(your role)</span>}
+              {ROLE_LABEL[r]} {r === me.role && <span className="text-xs font-normal text-brand-fg">(your role)</span>}
             </p>
-            <p className="mt-1 text-slate-500">{ROLE_DESCRIPTION[r]}</p>
+            <p className="mt-1 text-fg-3">{ROLE_DESCRIPTION[r]}</p>
           </div>
         ))}
       </div>
 
       <div className="flex items-center">
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-fg-3">
           You can add and manage: <strong>{canAdd.map((r) => ROLE_LABEL[r]).join(", ")}</strong>. Deactivated accounts
           are deleted automatically after {deleteAfterDays} days. Applicants don&apos;t need accounts.
         </p>
@@ -92,9 +92,9 @@ export function TeamPanel({
         />
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500 uppercase">
+          <thead className="bg-surface-2 text-left text-xs tracking-wide text-fg-3 uppercase">
             <tr>
               <th className="px-3 py-3">Name</th>
               <th className="px-3 py-3">Email (login)</th>
@@ -104,14 +104,14 @@ export function TeamPanel({
               <th className="px-3 py-3" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-line">
             {sorted.map((u) => {
               const self = u.id === me.id;
               const manageable = !self && canManage(me.role, u.role);
               return (
                 <tr key={u.id} className={cn(!u.active && "opacity-60")}>
                   <td className="px-3 py-2.5 font-medium">
-                    {u.name} {self && <span className="text-xs text-slate-400">(you)</span>}
+                    {u.name} {self && <span className="text-xs text-fg-4">(you)</span>}
                   </td>
                   <td className="px-3 py-2.5">{u.email}</td>
                   <td className="px-3 py-2.5">
@@ -133,7 +133,7 @@ export function TeamPanel({
                         ))}
                       </select>
                     ) : (
-                      <span className={cn("font-medium", u.role === "superadmin" && "text-purple-700")}>
+                      <span className={cn("font-medium", u.role === "superadmin" && "text-purple-700 dark:text-purple-300")}>
                         {ROLE_LABEL[u.role]}
                       </span>
                     )}
@@ -145,14 +145,14 @@ export function TeamPanel({
                       <div>
                         <Pill tone="bad">Deactivated</Pill>
                         {u.deletesAt && (
-                          <p className="mt-0.5 text-xs whitespace-nowrap text-red-600">
+                          <p className="mt-0.5 text-xs whitespace-nowrap text-danger-fg">
                             Deletes on {new Date(u.deletesAt).toLocaleDateString()}
                           </p>
                         )}
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-slate-500">
+                  <td className="px-3 py-2.5 whitespace-nowrap text-fg-3">
                     {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "Never"}
                   </td>
                   <td className="px-3 py-2.5 text-right whitespace-nowrap">
@@ -195,7 +195,7 @@ export function TeamPanel({
                         {u.active ? "Deactivate" : "Reactivate"}
                       </Button>
                     )}
-                    {!manageable && !self && <span className="text-xs text-slate-400">No access</span>}
+                    {!manageable && !self && <span className="text-xs text-fg-4">No access</span>}
                   </td>
                 </tr>
               );
@@ -229,7 +229,7 @@ function AddMemberForm({ roles, onDone }: { roles: StaffRole[]; onDone: (message
   }
 
   return (
-    <Card className="ring-2 ring-brand-100">
+    <Card className="ring-2 ring-brand-soft-2">
       <CardTitle>Add team member</CardTitle>
       <form onSubmit={onSubmit} className="space-y-4">
         {error && <Alert>{error}</Alert>}

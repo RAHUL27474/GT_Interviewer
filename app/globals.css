@@ -1,5 +1,65 @@
 @import "tailwindcss";
 
+/* Dark mode follows the "dark" class on <html>, set from the theme switcher (light / dark / system). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Colour tokens. Components use these semantic names (surface, fg, line, danger...) rather than fixed shades, so one
+ * set of classes works in both themes. Things that are always dark (video frames, full-screen warnings) keep fixed
+ * colours on purpose.
+ */
+:root {
+  color-scheme: light;
+  --canvas: #f5f6fa;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-3: #eef2f7;
+  --line: #e4e7ee;
+  --line-strong: #cbd2dd;
+  --fg: #0f172a;
+  --fg-2: #334155;
+  --fg-3: #64748b;
+  --fg-4: #94a3b8;
+  --brand-soft: #eef0fe;
+  --brand-soft-2: #dfe3fd;
+  --brand-fg: #3040b8;
+  --danger-soft: #fef2f2;
+  --danger-line: #fecaca;
+  --danger-fg: #b91c1c;
+  --warn-soft: #fffbeb;
+  --warn-line: #fde68a;
+  --warn-fg: #92400e;
+  --ok-soft: #ecfdf5;
+  --ok-fg: #047857;
+  --shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px -6px rgb(15 23 42 / 0.08);
+}
+
+.dark {
+  color-scheme: dark;
+  --canvas: #0b0f19;
+  --surface: #121826;
+  --surface-2: #171e2e;
+  --surface-3: #1f2839;
+  --line: #263145;
+  --line-strong: #36445c;
+  --fg: #e8ecf4;
+  --fg-2: #c3cad7;
+  --fg-3: #8b96aa;
+  --fg-4: #647086;
+  --brand-soft: #1d2350;
+  --brand-soft-2: #2a3270;
+  --brand-fg: #a9b4ff;
+  --danger-soft: #2a1215;
+  --danger-line: #5c2229;
+  --danger-fg: #fca5a5;
+  --warn-soft: #291d0b;
+  --warn-line: #5a4213;
+  --warn-fg: #fcd34d;
+  --ok-soft: #0c2519;
+  --ok-fg: #6ee7b7;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -8px rgb(0 0 0 / 0.5);
+}
+
 @theme inline {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --color-brand-50: #eef0fe;
@@ -7,8 +67,53 @@
   --color-brand-500: #4f5fe8;
   --color-brand-600: #3b4fd8;
   --color-brand-700: #3040b8;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-fg-4: var(--fg-4);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-soft-2: var(--brand-soft-2);
+  --color-brand-fg: var(--brand-fg);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-line: var(--danger-line);
+  --color-danger-fg: var(--danger-fg);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-line: var(--warn-line);
+  --color-warn-fg: var(--warn-fg);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-fg: var(--ok-fg);
+  --shadow-card: var(--shadow);
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-canvas text-fg antialiased;
+  /* A soft brand glow at the top of every page. */
+  background-image: radial-gradient(1200px 400px at 50% -120px, var(--brand-soft), transparent 70%);
+  background-repeat: no-repeat;
+}
+
+/* Smooth colour change when switching themes (not on first paint). */
+html.theme-ready body,
+html.theme-ready body * {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.1s ease;
+}
+
+::selection {
+  background: var(--brand-soft-2);
+}
+
+/* Thin, theme-aware scrollbars. */
+* {
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-width: thin;
 }

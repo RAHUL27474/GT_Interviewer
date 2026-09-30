@@ -74,11 +74,14 @@ export function Dashboard({ initialTab, defaultPassMark, google, me, team, delet
 
   const completed = candidates.filter((c) => c.scores);
   const stats = [
-    { label: "Applicants", value: candidates.length },
-    { label: "Interviews completed", value: completed.length },
-    { label: "Hire / Strong Hire", value: completed.filter((c) => c.scores!.total >= 60).length },
-    { label: "Open positions", value: jobs.filter((j) => j.active).length },
+    { label: "Applicants", value: candidates.length, icon: "👥", accent: "from-brand-500/15" },
+    { label: "Interviews completed", value: completed.length, icon: "🎥", accent: "from-sky-500/15" },
+    { label: "Hire / Strong Hire", value: completed.filter((c) => c.scores!.total >= 60).length, icon: "⭐", accent: "from-emerald-500/15" },
+    { label: "Open positions", value: jobs.filter((j) => j.active).length, icon: "💼", accent: "from-amber-500/15" },
   ];
+  const tabs = isManager ? (["candidates", "jobs", "team"] as const) : (["candidates", "jobs"] as const);
+  // Filters size to their content (inputClass is full width by default).
+  const filterClass = inputClass.replace("w-full", "");
 
   function exportCsv() {
     const header = ["Name", "Email", "Phone", "Position", "Applied", "Status", "Resume score", "Experience", "Current CTC", "Expected CTC", "Joining", "Interview (/70)", "Joining pts", "Salary pts", "Total", "Recommendation", "Interrupted", "Integrity risk", "Proctoring flags"];
@@ -102,37 +105,48 @@ export function Dashboard({ initialTab, defaultPassMark, google, me, team, delet
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2">
-        {(isManager ? (["candidates", "jobs", "team"] as const) : (["candidates", "jobs"] as const)).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn(
-              "cursor-pointer rounded-lg px-4 py-2 text-sm font-semibold capitalize transition",
-              tab === t ? "bg-brand-600 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50",
-            )}
-          >
-            {t}
-          </button>
-        ))}
-        <span className="ml-auto text-sm text-slate-500">
-          {me.name} ·{" "}
-          <span
-            className={cn(
-              "font-semibold",
-              me.role === "superadmin" ? "text-purple-700" : isManager ? "text-brand-700" : "text-slate-700",
-            )}
-          >
-            {ROLE_LABEL[me.role]}
-          </span>
-        </span>
-        <Button variant="ghost" onClick={() => setAccountOpen(true)}>
-          Change password
-        </Button>
-        <Button variant="ghost" onClick={signOut}>
-          Sign out
-        </Button>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center gap-3">
+        <nav className="inline-flex rounded-xl border border-line bg-surface p-1 shadow-card" aria-label="Sections">
+          {tabs.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              aria-current={tab === t ? "page" : undefined}
+              className={cn(
+                "cursor-pointer rounded-lg px-4 py-1.5 text-sm font-semibold capitalize transition",
+                "focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none",
+                tab === t ? "bg-brand-600 text-white shadow-sm" : "text-fg-3 hover:bg-surface-2 hover:text-fg",
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </nav>
+        <div className="ml-auto flex items-center gap-2">
+          <div className="hidden items-center gap-2.5 rounded-xl border border-line bg-surface py-1 pr-3 pl-1 sm:flex">
+            <span className="grid size-7 place-items-center rounded-lg bg-brand-soft text-xs font-bold text-brand-fg">
+              {me.name.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="text-sm leading-tight">
+              <span className="block font-medium text-fg">{me.name}</span>
+              <span
+                className={cn(
+                  "block text-xs font-semibold",
+                  me.role === "superadmin" ? "text-purple-700 dark:text-purple-300" : isManager ? "text-brand-fg" : "text-fg-3",
+                )}
+              >
+                {ROLE_LABEL[me.role]}
+              </span>
+            </span>
+          </div>
+          <Button variant="ghost" onClick={() => setAccountOpen(true)}>
+            Change password
+          </Button>
+          <Button variant="ghost" onClick={signOut}>
+            Sign out
+          </Button>
+        </div>
       </div>
       {accountOpen && <AccountDialog onClose={() => setAccountOpen(false)} />}
 
@@ -142,17 +156,40 @@ export function Dashboard({ initialTab, defaultPassMark, google, me, team, delet
         <JobsPanel jobs={jobs} google={google} defaultPassMark={defaultPassMark} />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {stats.map((s) => (
-              <div key={s.label} className="rounded-xl border border-slate-200 bg-white p-4">
-                <div className="text-2xl font-bold tabular-nums">{s.value}</div>
-                <div className="text-xs text-slate-500">{s.label}</div>
+              <div
+                key={s.label}
+                className={cn(
+                  "relative overflow-hidden rounded-2xl border border-line bg-surface bg-gradient-to-br to-transparent p-5 shadow-card",
+                  s.accent,
+                )}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="text-3xl font-bold tracking-tight tabular-nums">{s.value}</div>
+                  <span className="text-xl" aria-hidden>
+                    {s.icon}
+                  </span>
+                </div>
+                <div className="mt-1 text-sm text-fg-3">{s.label}</div>
               </div>
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <select value={jobFilter} onChange={(e) => setJobFilter(e.target.value)} className={cn(inputClass, "w-auto")}>
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-surface p-3 shadow-card">
+            <div className="relative min-w-56 flex-1">
+              <svg viewBox="0 0 20 20" fill="currentColor" className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-4" aria-hidden>
+                <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.45 4.39l3.08 3.08a.75.75 0 1 1-1.06 1.06l-3.08-3.08A7 7 0 0 1 2 9Z" clipRule="evenodd" />
+              </svg>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name, email or phone"
+                aria-label="Search candidates"
+                className={cn(inputClass, "pl-9")}
+              />
+            </div>
+            <select value={jobFilter} onChange={(e) => setJobFilter(e.target.value)} className={filterClass} aria-label="Position">
               <option value="">All positions</option>
               {jobs.map((j) => (
                 <option key={j.id} value={j.id}>
@@ -160,7 +197,7 @@ export function Dashboard({ initialTab, defaultPassMark, google, me, team, delet
                 </option>
               ))}
             </select>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={cn(inputClass, "w-auto")}>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={filterClass} aria-label="Status">
               <option value="">All statuses</option>
               {Object.entries(STATUS).map(([value, s]) => (
                 <option key={value} value={value}>
@@ -168,14 +205,8 @@ export function Dashboard({ initialTab, defaultPassMark, google, me, team, delet
                 </option>
               ))}
             </select>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name / email / phone"
-              className={cn(inputClass, "w-64")}
-            />
-            <div className="ml-auto flex gap-2">
-              <Button variant="secondary" onClick={() => router.refresh()}>
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={() => router.refresh()}>
                 Refresh
               </Button>
               <Button variant="secondary" onClick={exportCsv}>
@@ -184,9 +215,9 @@ export function Dashboard({ initialTab, defaultPassMark, google, me, team, delet
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <div className="max-h-[70vh] overflow-auto rounded-2xl border border-line bg-surface shadow-card">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs tracking-wide text-slate-500 uppercase">
+              <thead className="sticky top-0 z-10 bg-surface-2 text-xs tracking-wide text-fg-3 uppercase shadow-[0_1px_0_var(--line)]">
                 <tr>
                   {COLUMNS.map((col) => (
                     <th
@@ -201,14 +232,14 @@ export function Dashboard({ initialTab, defaultPassMark, google, me, team, delet
                   <th className="px-3 py-3 text-left font-semibold">Result</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-line">
                 {rows.map((c) => {
                   const s = c.scores;
                   return (
-                    <tr key={c.id} onClick={() => setOpenId(c.id)} className="cursor-pointer hover:bg-brand-50/60">
+                    <tr key={c.id} onClick={() => setOpenId(c.id)} className="cursor-pointer hover:bg-brand-soft/60">
                       <td className="px-3 py-2.5">
                         <div className="font-semibold">{c.fullName}</div>
-                        <div className="text-xs text-slate-500">{c.email}</div>
+                        <div className="text-xs text-fg-3">{c.email}</div>
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">{c.jobTitle}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap">{new Date(c.createdAt).toLocaleDateString()}</td>
@@ -241,7 +272,7 @@ export function Dashboard({ initialTab, defaultPassMark, google, me, team, delet
                 })}
                 {!rows.length && (
                   <tr>
-                    <td colSpan={COLUMNS.length + 1} className="px-3 py-12 text-center text-slate-400">
+                    <td colSpan={COLUMNS.length + 1} className="px-3 py-12 text-center text-fg-4">
                       No candidates yet.
                     </td>
                   </tr>
@@ -249,7 +280,7 @@ export function Dashboard({ initialTab, defaultPassMark, google, me, team, delet
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-fg-3">
             Total = Interview (0–70) + Joining (−10 to +15) + Salary (−15 to +15). Range −25 to 100. Click a row for details.
           </p>
         </>

@@ -14,7 +14,7 @@ export function JobsPanel({ jobs, google, defaultPassMark }: { jobs: Job[]; goog
       <GoogleCard google={google} />
 
       <div className="flex flex-wrap items-center gap-3">
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-fg-3">
           Each job gets a Google Form to share with applicants. The salary budget (LPA) is used for scoring only and is
           never shown to them.
         </p>
@@ -97,11 +97,11 @@ function GoogleCard({ google }: { google: GoogleStatus }) {
               <p>
                 Google account: <strong>{connection.email}</strong> <Pill tone="good">Connected</Pill>
               </p>
-              <p className="text-slate-500">
+              <p className="text-fg-3">
                 Job forms are created in this account and checked for new applications every minute. {emailLine}
               </p>
               {!connection.canReadDrive && (
-                <p className="mt-1 font-medium text-amber-700">
+                <p className="mt-1 font-medium text-warn-fg">
                   ⚠ Click <strong>Switch account</strong> and connect the same account again, allowing Google Drive access,
                   so the app can read the resumes applicants upload.
                 </p>
@@ -112,7 +112,7 @@ function GoogleCard({ google }: { google: GoogleStatus }) {
               <p>
                 <strong>No Google account connected.</strong>
               </p>
-              <p className="text-slate-500">
+              <p className="text-fg-3">
                 {google.configured
                   ? "Connect the company Google account to create job application forms and read applications."
                   : "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env (see the README), restart, then connect here."}{" "}
@@ -125,7 +125,7 @@ function GoogleCard({ google }: { google: GoogleStatus }) {
           <div className="flex gap-2">
             <a
               href="/api/admin/google/connect"
-              className="inline-flex items-center rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-600 hover:bg-brand-50"
+              className="inline-flex items-center rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-fg hover:bg-brand-soft"
             >
               {connection ? "Switch account" : "Connect Google"}
             </a>
@@ -136,7 +136,7 @@ function GoogleCard({ google }: { google: GoogleStatus }) {
             )}
           </div>
         )}
-        {!google.canConnect && !connection && <p className="text-xs text-slate-500">A Manager can connect it.</p>}
+        {!google.canConnect && !connection && <p className="text-xs text-fg-3">A Manager can connect it.</p>}
       </div>
     </Card>
   );
@@ -206,7 +206,7 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
           <h3 className="flex items-center gap-2 text-lg font-semibold">
             {job.title} {job.active ? <Pill tone="good">Open</Pill> : <Pill tone="bad">Closed</Pill>}
           </h3>
-          <p className="mt-0.5 text-sm text-slate-500">
+          <p className="mt-0.5 text-sm text-fg-3">
             {job.updatedBy && <span className="mr-1">Last edited by {job.updatedBy} ·</span>}
             {job.location || "No location"} · Budget:{" "}
             {job.salaryMax ? `₹${job.salaryMin ?? 0}–${job.salaryMax} LPA` : "not set"} · Resume pass mark{" "}
@@ -222,7 +222,7 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
                 href={form.responderUri}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center rounded-lg border border-line-strong px-4 py-2 text-sm font-semibold text-fg-2 hover:bg-surface-2"
               >
                 Open form
               </a>
@@ -230,7 +230,7 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
                 href={`https://docs.google.com/forms/d/${form.formId}/edit`}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center rounded-lg border border-line-strong px-4 py-2 text-sm font-semibold text-fg-2 hover:bg-surface-2"
               >
                 Edit in Google Forms
               </a>
@@ -245,7 +245,7 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
           <Button variant="secondary" onClick={onEdit}>
             Edit
           </Button>
-          <Button variant="ghost" onClick={remove} className="!border-red-200 !text-red-600 hover:!bg-red-50">
+          <Button variant="ghost" onClick={remove} className="!border-danger-line !text-danger-fg hover:!bg-danger-soft">
             Delete
           </Button>
         </div>
@@ -256,7 +256,7 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
         </div>
       )}
       {form && !form.uploadQuestionId && (
-        <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+        <div className="mt-3 rounded-lg bg-warn-soft p-3 text-sm text-warn-fg">
           <p className="font-semibold">Add the resume upload question (one-time, about 30 seconds)</p>
           <p className="mt-1">
             Google only allows this in the form editor. Click <strong>Edit in Google Forms</strong>, then{" "}
@@ -269,13 +269,13 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
         </div>
       )}
       {form && (
-        <div className="mt-3 space-y-1 text-xs text-slate-500">
+        <div className="mt-3 space-y-1 text-xs text-fg-3">
           <p>
             Form in {form.owner} ·{" "}
             {form.lastCheckedAt ? `last checked ${new Date(form.lastCheckedAt).toLocaleTimeString()}` : "not checked yet"}
             {!job.active && " · closed jobs aren't checked"}
           </p>
-          {form.lastError && <p className="text-red-600">Problem reading responses: {form.lastError}</p>}
+          {form.lastError && <p className="text-danger-fg">Problem reading responses: {form.lastError}</p>}
           {form.skipped?.length ? (
             <details>
               <summary className="cursor-pointer">{form.skipped.length} response(s) not added</summary>
@@ -290,7 +290,7 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
           ) : null}
         </div>
       )}
-      <div className="mt-3 max-h-48 overflow-auto rounded-lg bg-slate-50 p-3 text-sm whitespace-pre-wrap text-slate-700">
+      <div className="mt-3 max-h-48 overflow-auto rounded-lg bg-surface-2 p-3 text-sm whitespace-pre-wrap text-fg-2">
         {job.description}
       </div>
     </Card>
@@ -343,7 +343,7 @@ function JobForm({
   }
 
   return (
-    <Card className="ring-2 ring-brand-100">
+    <Card className="ring-2 ring-brand-soft-2">
       <CardTitle>{job ? "Edit job" : "New job"}</CardTitle>
       <form onSubmit={onSubmit} className="space-y-4">
         {error && <Alert>{error}</Alert>}
@@ -402,7 +402,7 @@ function JobForm({
               className="size-4 accent-brand-600"
             />
             Create a Google Form for applications
-            {!canCreateForm && <span className="text-slate-400">(connect a Google account first)</span>}
+            {!canCreateForm && <span className="text-fg-4">(connect a Google account first)</span>}
           </label>
         )}
         <div className="flex justify-end gap-2">

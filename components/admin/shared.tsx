@@ -39,7 +39,7 @@ export function IntegrityPill({ level }: { level: IntegritySummary["level"] }) {
 /** Number with a sign and green/red colour: +15, −5, 0. */
 export function Signed({ value }: { value: number }) {
   return (
-    <span className={cn("font-semibold tabular-nums", value > 0 && "text-emerald-600", value < 0 && "text-red-600")}>
+    <span className={cn("font-semibold tabular-nums", value > 0 && "text-ok-fg", value < 0 && "text-danger-fg")}>
       {value > 0 ? "+" : ""}
       {value}
     </span>

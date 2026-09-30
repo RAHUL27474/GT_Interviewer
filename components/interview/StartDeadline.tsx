@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { IconClock } from "../icons";
 
 function left(ms: number) {
   const h = Math.floor(ms / 3_600_000);
@@ -39,7 +40,8 @@ export function StartDeadline({ startBy }: { startBy: string }) {
         "mb-4 rounded-lg px-4 py-3 text-sm " + (ms < 3_600_000 ? "bg-warn-soft text-warn-fg" : "bg-brand-soft text-brand-fg")
       }
     >
-      ⏳ Please start your interview before <strong>{new Date(startBy).toLocaleString()}</strong> ({left(ms)} left).
+      <IconClock className="mr-1.5 inline size-4 -translate-y-px" />
+      Please start your interview before <strong>{new Date(startBy).toLocaleString()}</strong> ({left(ms)} left).
     </div>
   );
 }

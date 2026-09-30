@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Candidate } from "@/lib/types";
-import { Alert, Button, Pill } from "../ui";
+import { Alert, Button, buttonClass, Pill } from "../ui";
+import { IconCheck, IconDownload, IconExternal, IconFile, IconLink, IconRepeat, IconSparkles, IconTrash, IconX } from "../icons";
 import { computeIntegrity, PROCTOR_EVENTS } from "@/lib/proctoring";
 import { inviteState } from "@/lib/invite-state";
 import { IntegrityPill, RecommendationPill, Signed, statusBadge } from "./shared";
@@ -41,7 +42,7 @@ function ScreeningPanel({ c, onDecide }: { c: Candidate; onDecide: (d: "selected
         : `Rejection email due ${when(c.access?.inviteAt ?? s.at)}.`
       : null;
   return (
-    <div className="space-y-2 rounded-lg border border-line p-4 text-sm">
+    <div className="space-y-2 rounded-2xl border border-line bg-surface p-5 shadow-card text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-semibold">Resume screening</h3>
         <Pill tone={d.tone}>{d.label}</Pill>
@@ -225,15 +226,44 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged, canDele
 
   return (
     <>
-      <div className="fixed inset-0 z-30 bg-slate-900/20" onClick={onClose} />
-      <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-3xl overflow-y-auto border-l border-line bg-surface p-6 shadow-2xl">
-        <Button variant="ghost" onClick={onClose} className="float-right" aria-label="Close">
-          ✕
-        </Button>
-        {error && <Alert>{error}</Alert>}
-        {!c && !error && <p className="text-fg-4">Loading…</p>}
-        {c && (
-          <Detail
+      <div className="fixed inset-0 z-30 bg-slate-900/30 backdrop-blur-[2px]" onClick={onClose} />
+      <aside
+        role="dialog"
+        aria-label={c ? `Candidate ${c.fullName}` : "Candidate"}
+        className="fixed inset-y-0 right-0 z-40 flex w-full max-w-3xl flex-col border-l border-line bg-canvas shadow-2xl"
+      >
+        <header className="flex items-start gap-4 border-b border-line bg-surface px-6 py-4">
+          {c ? (
+            <>
+              <span className="grid size-11 shrink-0 place-items-center rounded-full bg-brand-soft text-sm font-semibold text-brand-fg">
+                {c.fullName
+                  .split(/\s+/)
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .map((w) => w[0]!.toUpperCase())
+                  .join("")}
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-lg font-semibold tracking-tight">{c.fullName}</h2>
+                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-fg-3">
+                  <span className="truncate">{c.jobTitle}</span>
+                  <Pill tone={statusBadge({ status: c.status, invite: inviteState(c) }).tone}>
+                    {statusBadge({ status: c.status, invite: inviteState(c) }).label}
+                  </Pill>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="flex-1 py-2 text-fg-4">{error ? "Candidate" : "Loading…"}</p>
+          )}
+          <Button variant="ghost" onClick={onClose} aria-label="Close" className="!px-2.5">
+            <IconX />
+          </Button>
+        </header>
+        <div className="flex-1 overflow-y-auto p-6">
+          {error && <Alert>{error}</Alert>}
+          {c && (
+            <Detail
             c={c}
             joiningLabels={joiningLabels}
             onReevaluate={reevaluate}
@@ -241,8 +271,9 @@ export function CandidateDrawer({ id, joiningLabels, onClose, onChanged, canDele
             onSendLogin={sendLogin}
             onDecide={decide}
             onDelete={canDelete ? deleteCandidate : undefined}
-          />
-        )}
+            />
+          )}
+        </div>
       </aside>
     </>
   );
@@ -307,20 +338,12 @@ function Detail({
     ["Applied", `${new Date(c.createdAt).toLocaleString()}${c.source === "google_form" ? " (Google Form)" : ""}`],
     ["Previous attempts", c.attempts?.length ?? 0],
   ];
-  const badge = statusBadge({ status: c.status, invite: inviteState(c) });
   const media = (file: string) => `/api/admin/candidates/${encodeURIComponent(c.id)}/media/${encodeURIComponent(file)}`;
   const mediaGone = Boolean(c.mediaDeletedAt);
   const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold">{c.fullName}</h2>
-        <div className="mt-1 flex items-center gap-2 text-sm text-fg-3">
-          {c.jobTitle} <Pill tone={badge.tone}>{badge.label}</Pill>
-        </div>
-      </div>
-
       {c.screening && <ScreeningPanel c={c} onDecide={onDecide} />}
       {c.status === "ready" && c.screening?.decision !== "review" && <LoginStatus c={c} onSendLogin={onSendLogin} />}
       {c.resumeProblem && (
@@ -360,40 +383,27 @@ function Detail({
       <div className="flex flex-wrap gap-2">
         {c.resume && (
           <>
-            <a
-              href={`/api/admin/candidates/${encodeURIComponent(c.id)}/resume?view=1`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-            >
-              View resume
+            <a href={`/api/admin/candidates/${encodeURIComponent(c.id)}/resume?view=1`} target="_blank" rel="noreferrer" className={buttonClass("primary")}>
+              <IconFile /> View resume
             </a>
-            <a
-              href={`/api/admin/candidates/${encodeURIComponent(c.id)}/resume`}
-              className="inline-flex items-center rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-fg hover:bg-brand-soft"
-            >
-              Download resume
+            <a href={`/api/admin/candidates/${encodeURIComponent(c.id)}/resume`} className={buttonClass("ghost")}>
+              <IconDownload /> Download
             </a>
           </>
         )}
         {!c.resume && c.resumeUrl && /^https:\/\//.test(c.resumeUrl) && (
-          <a
-            href={c.resumeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-          >
-            View resume (applicant&apos;s link)
+          <a href={c.resumeUrl} target="_blank" rel="noopener noreferrer" className={buttonClass("primary")}>
+            <IconExternal /> View resume (applicant&apos;s link)
           </a>
         )}
         {canReevaluate && (
           <Button variant="ghost" onClick={onReevaluate}>
-            Re-run AI evaluation
+            <IconSparkles /> Re-run AI evaluation
           </Button>
         )}
         {canReevaluate && (
           <Button variant="ghost" onClick={onReinterview}>
-            Allow re-interview
+            <IconRepeat /> Allow re-interview
           </Button>
         )}
         <Button
@@ -405,26 +415,30 @@ function Detail({
             setTimeout(() => setCopied(false), 1500);
           }}
         >
-          {copied ? "Copied ✓" : c.access ? "Copy login page link" : "Copy interview link"}
+          {copied ? <IconCheck /> : <IconLink />}
+          {copied ? "Copied" : c.access ? "Copy login page link" : "Copy interview link"}
         </Button>
         {onDelete && (
           <Button variant="ghost" onClick={onDelete} className="!border-danger-line !text-danger-fg hover:!bg-danger-soft">
-            Delete candidate
+            <IconTrash /> Delete
           </Button>
         )}
       </div>
 
-      <dl className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-1.5 text-sm">
-        {facts.map(([k, v]) => (
-          <div key={k} className="contents">
-            <dt className="text-fg-3">{k}</dt>
-            <dd className="break-all">{v}</dd>
-          </div>
-        ))}
-      </dl>
+      <section className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+        <h3 className="mb-4 text-xs font-semibold tracking-wider text-fg-3 uppercase">Details</h3>
+        <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+          {facts.map(([k, v]) => (
+            <div key={k} className="min-w-0">
+              <dt className="text-xs text-fg-3">{k}</dt>
+              <dd className="mt-0.5 font-medium break-words text-fg">{v}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
 
-      <div>
-        <h3 className="mb-2 font-semibold">Screen recording</h3>
+      <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+        <h3 className="mb-3 text-xs font-semibold tracking-wider text-fg-3 uppercase">Screen recording</h3>
         {mediaGone && (
           <p className="mb-2 rounded-md bg-surface-3 px-3 py-2 text-sm text-fg-2">
             Videos, snapshots and the screen recording were deleted automatically on {day(c.mediaDeletedAt!)}. The
@@ -458,8 +472,8 @@ function Detail({
         )}
       </div>
 
-      <div>
-        <h3 className="mb-2 flex items-center gap-2 font-semibold">
+      <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+        <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-wider text-fg-3 uppercase">
           Live proctoring <IntegrityPill level={integrity.level} />
         </h3>
         {c.proctoring.events.length === 0 ? (
@@ -499,8 +513,8 @@ function Detail({
       </div>
 
       {ev && (
-        <div>
-          <h3 className="mb-1 font-semibold">AI summary</h3>
+        <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+          <h3 className="mb-2 text-xs font-semibold tracking-wider text-fg-3 uppercase">AI summary</h3>
           <p className="text-sm text-fg-2">{ev.summary}</p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <BulletList title="Strengths" items={ev.strengths} />
@@ -520,8 +534,8 @@ function Detail({
         </div>
       )}
 
-      <div>
-        <h3 className="mb-2 font-semibold">Interview</h3>
+      <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+        <h3 className="mb-3 text-xs font-semibold tracking-wider text-fg-3 uppercase">Interview</h3>
         <div className="space-y-3">
           {c.questions.map((q, i) => {
             const a = c.answers[i];
@@ -587,8 +601,8 @@ function Detail({
 
 function ScoreBox({ label, value, sub }: { label: React.ReactNode; value: React.ReactNode; sub: string }) {
   return (
-    <div className="rounded-lg border border-line p-3">
-      <div className="text-2xl font-bold tabular-nums">{value}</div>
+    <div className="rounded-2xl border border-line bg-surface p-4 shadow-card">
+      <div className="text-2xl font-semibold tracking-tight tabular-nums">{value}</div>
       <div className="text-xs text-fg-3">{sub}</div>
       {label && <div className="mt-1 text-xs">{label}</div>}
     </div>

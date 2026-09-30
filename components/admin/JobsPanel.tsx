@@ -2,8 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { IconCheck, IconCopy, IconExternal, IconLink, IconPencil, IconPlus, IconTrash } from "../icons";
 import type { GoogleStatus, Job } from "@/lib/types";
-import { Alert, Button, Card, CardTitle, Field, inputClass, Pill } from "../ui";
+import { Alert, Button, buttonClass, Card, CardTitle, Field, inputClass, Pill } from "../ui";
 
 export function JobsPanel({ jobs, google, defaultPassMark }: { jobs: Job[]; google: GoogleStatus; defaultPassMark: number }) {
   const [editing, setEditing] = useState<Job | "new" | null>(null);
@@ -19,7 +20,7 @@ export function JobsPanel({ jobs, google, defaultPassMark }: { jobs: Job[]; goog
           never shown to them.
         </p>
         <Button onClick={() => setEditing("new")} className="ml-auto">
-          + New job
+          <IconPlus /> New job
         </Button>
       </div>
 
@@ -90,7 +91,9 @@ function GoogleCard({ google }: { google: GoogleStatus }) {
         </div>
       )}
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-2xl">📝</span>
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand-fg">
+          <IconLink className="size-5" />
+        </span>
         <div className="min-w-0 flex-1 text-sm">
           {connection ? (
             <>
@@ -153,7 +156,8 @@ function CopyButton({ text, label }: { text: string; label: string }) {
         setTimeout(() => setCopied(false), 1500);
       }}
     >
-      {copied ? "Copied ✓" : label}
+      {copied ? <IconCheck /> : <IconCopy />}
+      {copied ? "Copied" : label}
     </Button>
   );
 }
@@ -222,17 +226,17 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
                 href={form.responderUri}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center rounded-lg border border-line-strong px-4 py-2 text-sm font-semibold text-fg-2 hover:bg-surface-2"
+                className={buttonClass("ghost")}
               >
-                Open form
+                <IconExternal /> Open form
               </a>
               <a
                 href={`https://docs.google.com/forms/d/${form.formId}/edit`}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center rounded-lg border border-line-strong px-4 py-2 text-sm font-semibold text-fg-2 hover:bg-surface-2"
+                className={buttonClass("ghost")}
               >
-                Edit in Google Forms
+                <IconPencil /> Edit form
               </a>
             </>
           ) : (
@@ -243,10 +247,10 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
             )
           )}
           <Button variant="secondary" onClick={onEdit}>
-            Edit
+            <IconPencil /> Edit job
           </Button>
-          <Button variant="ghost" onClick={remove} className="!border-danger-line !text-danger-fg hover:!bg-danger-soft">
-            Delete
+          <Button variant="ghost" onClick={remove} aria-label="Delete job" title="Delete job" className="!border-danger-line !px-2.5 !text-danger-fg hover:!bg-danger-soft">
+            <IconTrash />
           </Button>
         </div>
       </div>

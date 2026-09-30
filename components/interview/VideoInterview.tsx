@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { InterviewState, ProctorEventType } from "@/lib/types";
 import { Alert, Button, Card, cn } from "../ui";
+import { IconCheck, IconClock, IconExpand, IconEye, IconMic, IconMonitor, IconVideo, IconVolume, IconX } from "../icons";
 import {
   AnswerRecorder,
   captureFrame,
@@ -442,7 +443,7 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
           )}
           {phase === "setup" && camera.stream && (
             <div className="absolute inset-x-3 bottom-3 flex items-center gap-2 rounded-md bg-black/60 px-3 py-2 text-xs text-white">
-              🎤
+              <IconMic className="size-4 shrink-0" />
               <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/20">
                 <div className="h-full bg-emerald-400 transition-[width] duration-75" style={{ width: `${camera.micLevel * 100}%` }} />
               </div>
@@ -515,7 +516,7 @@ export function VideoInterview({ id, initialState }: { id: string; initialState:
                     </p>
                     <div className="flex flex-wrap gap-2">
                       <Button variant="ghost" onClick={() => q && speak(q.text)}>
-                        🔊 Replay question
+                        <IconVolume /> Replay question
                       </Button>
                       <Button onClick={startRecording} className="flex-1">
                         Start answering now
@@ -692,11 +693,31 @@ function PhaseBadge({ phase }: { phase: Phase }) {
 
 function Check({ ok, pending, children }: { ok: boolean; pending?: boolean; children: React.ReactNode }) {
   return (
-    <li className="flex items-center gap-2">
-      <span className={cn("font-bold", pending ? "text-fg-4" : ok ? "text-ok-fg" : "text-danger-fg")}>
-        {pending ? "…" : ok ? "✓" : "✗"}
+    <li className="flex items-center gap-2.5">
+      <span
+        className={cn(
+          "grid size-5 shrink-0 place-items-center rounded-full",
+          pending ? "border border-line-strong" : ok ? "bg-ok-soft text-ok-fg" : "bg-danger-soft text-danger-fg",
+        )}
+      >
+        {pending ? null : ok ? <IconCheck className="size-3" /> : <IconX className="size-3" />}
       </span>
-      {children}
+      <span className={cn(pending ? "text-fg-3" : "text-fg")}>{children}</span>
+    </li>
+  );
+}
+
+/** One interview rule: an icon, a short title and the detail. */
+function Rule({ icon: Icon, title, children }: { icon: typeof IconCheck; title: string; children: React.ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand-fg">
+        <Icon className="size-4" />
+      </span>
+      <div>
+        <p className="text-sm font-medium text-fg">{title}</p>
+        <p className="text-sm text-fg-3">{children}</p>
+      </div>
     </li>
   );
 }
@@ -766,35 +787,33 @@ function SetupPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <h1 className="text-xl font-bold">Hi {state.fullName.split(" ")[0]} 👋</h1>
+      <h1 className="text-xl font-semibold tracking-tight">Hi {state.fullName.split(" ")[0]}, welcome</h1>
       <p className="mt-1 text-sm text-fg-3">
         Video interview for <strong className="text-fg">{state.jobTitle}</strong>
       </p>
-      <ul className="mt-4 list-disc space-y-1.5 pl-5 text-sm text-fg-2">
-        <li>
-          {state.total} questions. Each is read aloud, then you get {state.prepSeconds}s to think and up to{" "}
-          {state.minutesPerQuestion} min to answer on camera. No retakes.
-        </li>
-        <li>
-          Your camera and <strong>entire screen are recorded</strong>, and the interview runs in fullscreen. Your face must
-          stay visible; typing, phones and other people are flagged.
-        </li>
-        <li>
-          <strong>Look at the screen and be alone.</strong> Looking away gives a warning ({state.maxLookAwayWarnings}{" "}
-          allowed); the next time ends the interview. If another person appears on camera, they have{" "}
-          {state.secondPersonGraceSeconds} seconds to leave; a second appearance ends the interview.
-        </li>
-        <li>
-          <strong>Stay on this tab, in fullscreen.</strong> Leaving gives you a warning ({state.maxWarnings} allowed). Leaving
-          again, or staying away more than {state.awayGraceSeconds} seconds, submits your interview.
-        </li>
-        <li>
-          <strong>Complete it in one sitting.</strong> If you close or refresh the page, or lose connection, the interview
-          is submitted as it is and you&apos;ll need to contact HR for a re-interview.
-        </li>
+      <ul className="mt-5 space-y-4">
+        <Rule icon={IconVideo} title={`${state.total} questions, no retakes`}>
+          Each is read aloud. You get {state.prepSeconds}s to think, then up to {state.minutesPerQuestion} min to answer on
+          camera.
+        </Rule>
+        <Rule icon={IconMonitor} title="Camera and entire screen are recorded">
+          The interview runs in fullscreen. Typing, phones and other people are flagged.
+        </Rule>
+        <Rule icon={IconEye} title="Look at the screen and be alone">
+          Looking away: {state.maxLookAwayWarnings} warnings, then the interview ends. Another person has{" "}
+          {state.secondPersonGraceSeconds}s to leave; a second appearance ends it.
+        </Rule>
+        <Rule icon={IconExpand} title="Stay on this tab, in fullscreen">
+          Leaving: {state.maxWarnings} warnings. Leaving again, or for more than {state.awayGraceSeconds}s, submits your
+          interview.
+        </Rule>
+        <Rule icon={IconClock} title="Complete it in one sitting">
+          Closing, refreshing or losing connection submits it as it is; you&apos;d need to ask HR for a re-interview.
+        </Rule>
       </ul>
 
-      <ul className="mt-4 space-y-1 rounded-lg bg-surface-2 p-3 text-sm">
+      <p className="mt-6 text-xs font-semibold tracking-wider text-fg-3 uppercase">Setup</p>
+      <ul className="mt-2 space-y-2 rounded-xl border border-line bg-surface-2 p-3.5 text-sm">
         <Check ok={cameraOn} pending={!cameraOn}>Camera and microphone on</Check>
         {cameraOn &&
           (proctorStatus === "unavailable" ? (

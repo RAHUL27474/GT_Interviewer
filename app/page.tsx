@@ -1,4 +1,5 @@
 import { CandidateLogin } from "@/components/CandidateLogin";
+import { IconVideo } from "@/components/icons";
 import { TopBar } from "@/components/ui";
 import { config } from "@/lib/config";
 
@@ -49,9 +50,10 @@ export default async function CandidateLoginPage({ searchParams }: { searchParam
             ))}
           </ol>
 
-          <div className="mt-8 rounded-xl border border-line bg-surface/70 p-4 text-sm text-fg-3">
-            🎥 Use a <strong className="text-fg-2">laptop or desktop</strong> with a webcam and microphone, ideally with Google
-            Chrome or Microsoft Edge, in a quiet place.
+          <div className="mt-8 flex gap-3 rounded-xl border border-line bg-surface/70 p-4 text-sm text-fg-3">
+            <IconVideo className="mt-0.5 size-5 shrink-0 text-brand-fg" />
+            <p>Use a <strong className="text-fg-2">laptop or desktop</strong> with a webcam and microphone, ideally with Google
+            Chrome or Microsoft Edge, in a quiet place.</p>
           </div>
         </section>
 

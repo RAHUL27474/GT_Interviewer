@@ -10,3 +10,4 @@ public/faceapi/
 
 .vercel
 .env*
+!.env.example

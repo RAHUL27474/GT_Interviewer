@@ -359,11 +359,31 @@ function Detail({
 
       <div className="flex flex-wrap gap-2">
         {c.resume && (
+          <>
+            <a
+              href={`/api/admin/candidates/${encodeURIComponent(c.id)}/resume?view=1`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+            >
+              View resume
+            </a>
+            <a
+              href={`/api/admin/candidates/${encodeURIComponent(c.id)}/resume`}
+              className="inline-flex items-center rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-600 hover:bg-brand-50"
+            >
+              Download resume
+            </a>
+          </>
+        )}
+        {!c.resume && c.resumeUrl && /^https:\/\//.test(c.resumeUrl) && (
           <a
-            href={`/api/admin/candidates/${encodeURIComponent(c.id)}/resume`}
-            className="inline-flex items-center rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-600 hover:bg-brand-50"
+            href={c.resumeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
           >
-            Download resume
+            View resume (applicant&apos;s link)
           </a>
         )}
         {canReevaluate && (

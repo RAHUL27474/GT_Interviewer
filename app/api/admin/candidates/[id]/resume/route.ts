@@ -10,7 +10,8 @@ const MIME: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
 };
 
-export const GET = handler(async (_request: Request, ctx: { params: Promise<{ id: string }> }) => {
+/** Downloads the resume, or with ?view=1 opens it in the browser (PDF and text; Word files still download). */
+export const GET = handler(async (request: Request, ctx: { params: Promise<{ id: string }> }) => {
   await requireStaff();
   const c = await store.getCandidate((await ctx.params).id);
   if (!c) throw new HttpError(404, "Candidate not found.");
@@ -22,7 +23,9 @@ export const GET = handler(async (_request: Request, ctx: { params: Promise<{ id
   return new Response(new Uint8Array(data), {
     headers: {
       "Content-Type": MIME[path.extname(resume.storedAs)] ?? "application/octet-stream",
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(resume.fileName)}`,
+      "Content-Disposition": `${new URL(request.url).searchParams.has("view") ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(resume.fileName)}`,
+      // Shown as exactly its stored type (PDF, text or Word), never guessed as a web page.
+      "X-Content-Type-Options": "nosniff",
     },
   });
 });

@@ -15,7 +15,8 @@
     "postinstall": "node scripts/copy-mediapipe.mjs",
     "migrate": "tsx --env-file=.env scripts/migrate-to-cloud.ts",
     "storage:cors": "tsx --env-file=.env scripts/storage-cors.ts",
-    "b2:setup": "tsx --env-file=.env scripts/b2-setup.ts"
+    "b2:setup": "tsx --env-file=.env scripts/b2-setup.ts",
+    "storage:check": "tsx --env-file=.env scripts/storage-check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

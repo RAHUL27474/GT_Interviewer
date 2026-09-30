@@ -256,17 +256,16 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
         </div>
       )}
       {form && !form.uploadQuestionId && (
-        <div className="mt-3 rounded-lg bg-warn-soft p-3 text-sm text-warn-fg">
-          <p className="font-semibold">Add the resume upload question (one-time, about 30 seconds)</p>
-          <p className="mt-1">
-            Google only allows this in the form editor. Click <strong>Edit in Google Forms</strong>, then{" "}
-            <strong>+ (Add question)</strong>, change the type to <strong>File upload</strong> and click Continue. Title
-            it <strong>Upload your resume</strong>, turn on <strong>Allow only specific file types</strong> (tick PDF
-            and Document), set <strong>Maximum file size</strong> to 10 MB, and switch on <strong>Required</strong>. If
-            the form has an old &quot;Link to your resume&quot; question, delete it. The app finds the new question by
-            itself within a minute. Note: Google asks applicants to sign in with a Google account to upload a file.
+        <details className="mt-3 rounded-lg bg-warn-soft px-3 py-2 text-sm text-warn-fg">
+          <summary className="cursor-pointer">
+            ⚠ The form has no resume upload question yet. <span className="underline">How?</span>
+          </summary>
+          <p className="mt-2">
+            Click <strong>Edit in Google Forms</strong> → <strong>+</strong> → type <strong>File upload</strong> → allow
+            PDF and Document, 10 MB, <strong>Required</strong>. Delete any old &quot;Link to your resume&quot; question.
+            The app finds it by itself within a few minutes. Applicants will need a Google account to upload.
           </p>
-        </div>
+        </details>
       )}
       {form && (
         <div className="mt-3 space-y-1 text-xs text-fg-3">
@@ -275,7 +274,13 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
             {form.lastCheckedAt ? `last checked ${new Date(form.lastCheckedAt).toLocaleTimeString()}` : "not checked yet"}
             {!job.active && " · closed jobs aren't checked"}
           </p>
-          {form.lastError && <p className="text-danger-fg">Problem reading responses: {form.lastError}</p>}
+          {form.lastError && (
+            <p className="text-danger-fg">
+              {/reconnect/i.test(form.lastError)
+                ? "New applications can't be read: reconnect Google with \"Switch account\" at the top of this tab."
+                : `Problem reading responses: ${form.lastError}`}
+            </p>
+          )}
           {form.skipped?.length ? (
             <details>
               <summary className="cursor-pointer">{form.skipped.length} response(s) not added</summary>

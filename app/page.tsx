@@ -1,9 +1,12 @@
+import { after } from "next/server";
 import { CandidateLogin } from "@/components/CandidateLogin";
+import { runJobsIfDue } from "@/lib/jobs-runner";
 import { IconVideo } from "@/components/icons";
 import { TopBar } from "@/components/ui";
 import { config } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const NOTICES: Record<string, string> = {
   login: "Please log in to continue your interview.",
@@ -12,6 +15,7 @@ const NOTICES: Record<string, string> = {
 /** Candidates log in here with the details from their interview email. Applications come in through Google Forms. */
 export default async function CandidateLoginPage({ searchParams }: { searchParams: Promise<{ notice?: string }> }) {
   const { notice } = await searchParams;
+  after(runJobsIfDue);
   const minutes = config.questionCount * (config.minutesPerQuestion + 1);
   const steps = [
     { title: "Check your setup", text: "Turn on your camera and microphone, share your screen and go fullscreen." },

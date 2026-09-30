@@ -1,4 +1,6 @@
+import { after } from "next/server";
 import { Dashboard } from "@/components/admin/Dashboard";
+import { runJobsIfDue } from "@/lib/jobs-runner";
 import { LoginForm } from "@/components/admin/LoginForm";
 import { Alert, TopBar } from "@/components/ui";
 import { getCurrentUser, toPublic } from "@/lib/auth";
@@ -13,6 +15,7 @@ import { store } from "@/lib/store";
 import { visibleJobs, visibleTeam } from "@/lib/visibility";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 export const metadata = { title: `${config.companyName} · HR Dashboard` };
 
 export default async function AdminPage({
@@ -22,6 +25,8 @@ export default async function AdminPage({
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
+  // Staff opening the dashboard also brings in new applications and due emails (at most once a minute).
+  after(runJobsIfDue);
 
   let body;
   if (!user) {

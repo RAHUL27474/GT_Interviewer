@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { runScheduledJobs } from "@/lib/jobs-runner";
+import { store } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -22,6 +23,7 @@ function authorized(request: Request) {
 export async function GET(request: Request) {
   if (!process.env.CRON_SECRET) return Response.json({ error: "Set CRON_SECRET to enable this endpoint." }, { status: 503 });
   if (!authorized(request)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  await store.setSetting("jobsLastRun", new Date().toISOString());
   const steps = await runScheduledJobs();
   return Response.json({ ok: steps.every((s) => s.ok), steps }, { status: steps.every((s) => s.ok) ? 200 : 500 });
 }

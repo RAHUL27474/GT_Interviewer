@@ -5,6 +5,7 @@ import { purgeDeactivatedAccounts } from "./auth";
 import { purgeOldMedia, resumePendingEvaluations, sweepStaleInterviews } from "./candidates";
 import { syncAllForms } from "./intake";
 import { logger } from "./log";
+import { store } from "./store";
 
 const log = logger("cron");
 
@@ -17,6 +18,25 @@ async function step(name: string, fn: () => Promise<unknown>) {
   } catch (err) {
     log.error(`${name} failed:`, err);
     return { name, ok: false, ms: Date.now() - start, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+const LAST_RUN_KEY = "jobsLastRun";
+const MIN_GAP_MS = 60_000;
+
+/**
+ * Runs the jobs if they haven't run in the last minute (tracked in the database, so all server instances share it).
+ * Called on page visits and health checks, so on serverless hosting the work keeps moving even when the external
+ * scheduler is slow or missing. Never throws.
+ */
+export async function runJobsIfDue() {
+  try {
+    const last = await store.getSetting<string>(LAST_RUN_KEY);
+    if (last && Date.now() - Date.parse(last) < MIN_GAP_MS) return;
+    await store.setSetting(LAST_RUN_KEY, new Date().toISOString());
+    await runScheduledJobs();
+  } catch (err) {
+    log.error("Background jobs failed:", err);
   }
 }
 

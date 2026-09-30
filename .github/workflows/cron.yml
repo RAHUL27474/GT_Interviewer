@@ -1,0 +1,28 @@
+# Runs the app's background jobs (new form applications, decision emails, abandoned interviews, stuck gradings)
+# on hosting without an always-on server, such as Vercel's free tier. GitHub runs this every 5 minutes at best, and
+# sometimes later; for every minute use cron-job.org with the same URL and header instead.
+# Needs two repository secrets (Settings -> Secrets and variables -> Actions):
+#   APP_URL      e.g. https://gt-interviewer.vercel.app
+#   CRON_SECRET  the same value as CRON_SECRET in the app's environment
+name: Background jobs
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Call /api/cron
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "Set the APP_URL and CRON_SECRET repository secrets first."; exit 0
+          fi
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -H "Authorization: Bearer $CRON_SECRET" "${APP_URL%/}/api/cron"

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { GoogleStatus, Job } from "@/lib/types";
 import { Alert, Button, Card, CardTitle, Field, inputClass, Pill } from "../ui";
 
@@ -24,10 +24,10 @@ export function JobsPanel({ jobs, google, defaultPassMark }: { jobs: Job[]; goog
       </div>
 
       {notice && <Alert>{notice}</Alert>}
-      {editing && (
+      {editing === "new" && (
         <JobForm
-          key={editing === "new" ? "new" : editing.id}
-          job={editing === "new" ? null : editing}
+          key="new"
+          job={null}
           canCreateForm={Boolean(google.connection)}
           defaultPassMark={defaultPassMark}
           onDone={(warning) => {
@@ -37,15 +37,29 @@ export function JobsPanel({ jobs, google, defaultPassMark }: { jobs: Job[]; goog
         />
       )}
 
-      {jobs.map((j) => (
-        <JobCard
-          key={j.id}
-          job={j}
-          googleConnected={Boolean(google.connection)}
-          defaultPassMark={defaultPassMark}
-          onEdit={() => setEditing(j)}
-        />
-      ))}
+      {/* The job being edited is replaced by its form, right where it was clicked. */}
+      {jobs.map((j) =>
+        editing !== "new" && editing?.id === j.id ? (
+          <JobForm
+            key={j.id}
+            job={j}
+            canCreateForm={Boolean(google.connection)}
+            defaultPassMark={defaultPassMark}
+            onDone={(warning) => {
+              setEditing(null);
+              setNotice(warning ?? "");
+            }}
+          />
+        ) : (
+          <JobCard
+            key={j.id}
+            job={j}
+            googleConnected={Boolean(google.connection)}
+            defaultPassMark={defaultPassMark}
+            onEdit={() => setEditing(j)}
+          />
+        ),
+      )}
     </div>
   );
 }
@@ -297,6 +311,9 @@ function JobForm({
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  // Bring the form into view when it opens (the job may be far down the list).
+  useEffect(() => ref.current?.scrollIntoView({ behavior: "smooth", block: "start" }), []);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -329,6 +346,7 @@ function JobForm({
   }
 
   return (
+    <div ref={ref} className="scroll-mt-4">
     <Card className="ring-2 ring-brand-100">
       <CardTitle>{job ? "Edit job" : "New job"}</CardTitle>
       <form onSubmit={onSubmit} className="space-y-4">
@@ -401,5 +419,6 @@ function JobForm({
         </div>
       </form>
     </Card>
+    </div>
   );
 }

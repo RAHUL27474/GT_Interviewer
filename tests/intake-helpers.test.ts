@@ -105,3 +105,18 @@ test("screening decisions", async () => {
   assert.deepEqual(screeningRules({}, 55), { passMark: 55, minExperience: null });
   assert.deepEqual(screeningRules({ screening: rules }), rules);
 });
+
+test("uploaded files are found in form responses", async () => {
+  const { uploadedFile } = await import("../lib/google-forms");
+  const { driveFileId } = await import("../lib/resume-link");
+  const r = {
+    responseId: "r",
+    lastSubmittedTime: "",
+    answers: { q1: answer("x"), q9: { fileUploadAnswers: { answers: [{ fileId: "F1", fileName: "cv.pdf" }] } } },
+  };
+  assert.equal(uploadedFile(r, "q9")?.fileId, "F1");
+  assert.equal(uploadedFile(r)?.fileId, "F1", "found even before the question id is known");
+  assert.equal(uploadedFile({ responseId: "r", lastSubmittedTime: "" }), null);
+  assert.equal(driveFileId("https://drive.google.com/file/d/ABC_1-x/view?usp=sharing"), "ABC_1-x");
+  assert.equal(driveFileId("https://example.com/cv.pdf"), null);
+});

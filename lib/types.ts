@@ -91,6 +91,8 @@ export interface GoogleJobForm {
   /** Question id for each field. Email may instead come from the form's own email collection. */
   questionIds: Partial<Record<FormField, string>>;
   emailFromSettings: boolean;
+  /** The "File upload" resume question, added by hand in Google Forms; found automatically. */
+  uploadQuestionId?: string;
   /** Responses submitted up to this time have been read (RFC 3339, from Google). */
   syncedUntil?: string;
   lastCheckedAt?: string;
@@ -123,7 +125,7 @@ export type PublicJob = Pick<Job, "id" | "title" | "location" | "description">;
 export interface GoogleStatus {
   /** GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set. */
   configured: boolean;
-  connection: { email: string; connectedAt: string; connectedBy: string; canSendMail: boolean } | null;
+  connection: { email: string; connectedAt: string; connectedBy: string; canSendMail: boolean; canReadDrive: boolean } | null;
   /** Managers and Super Admins may connect or disconnect. */
   canConnect: boolean;
   /** How emails go out now, or null when they can't. */

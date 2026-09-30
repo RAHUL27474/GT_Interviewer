@@ -16,9 +16,12 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/forms.body",
   "https://www.googleapis.com/auth/forms.responses.readonly",
   "https://www.googleapis.com/auth/gmail.send",
+  // Resumes uploaded through the forms are saved in this account's Drive; this downloads them.
+  "https://www.googleapis.com/auth/drive.readonly",
 ];
 const FORMS_SCOPES = GOOGLE_SCOPES.filter((s) => s.includes("/forms."));
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 
 const SETTING_KEY = "google";
 
@@ -36,6 +39,8 @@ export interface GoogleConnection {
   connectedAt: string;
   connectedBy: string;
   canSendMail: boolean;
+  /** Can download resumes uploaded through the forms (connected with Drive permission). */
+  canReadDrive: boolean;
 }
 
 export const googleConfigured = Boolean(config.google.clientId && config.google.clientSecret);
@@ -72,7 +77,13 @@ function decrypt(stored: string) {
 export async function googleConnection(): Promise<GoogleConnection | null> {
   const c = await store.getSetting<StoredConnection>(SETTING_KEY);
   if (!c) return null;
-  return { email: c.email, connectedAt: c.connectedAt, connectedBy: c.connectedBy, canSendMail: c.scopes.includes(GMAIL_SCOPE) };
+  return {
+    email: c.email,
+    connectedAt: c.connectedAt,
+    connectedBy: c.connectedBy,
+    canSendMail: c.scopes.includes(GMAIL_SCOPE),
+    canReadDrive: c.scopes.includes(DRIVE_SCOPE),
+  };
 }
 
 /** Where Google sends the Manager back after they approve. Must be listed in the OAuth client's redirect URIs. */
@@ -177,6 +188,35 @@ async function accessToken(): Promise<string> {
       throw new GoogleError("Google access was revoked or has expired. A Manager needs to reconnect Google in Jobs.", 401);
     }
     throw err;
+  }
+}
+
+/**
+ * Downloads a Drive file's contents (e.g. a resume uploaded through a form) as the connected account.
+ * Throws GoogleError; stops reading past `maxBytes`.
+ */
+export async function driveDownload(fileId: string, maxBytes: number): Promise<{ buffer: Buffer; contentType: string }> {
+  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`;
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${await accessToken()}` },
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (res.status === 401 && attempt === 0) {
+      cached = null;
+      continue;
+    }
+    if (!res.ok) {
+      const detail = ((await res.json().catch(() => ({}))) as { error?: { message?: string } }).error?.message;
+      if (res.status === 403 && /scope/i.test(detail ?? "")) {
+        throw new GoogleError("Reconnect Google (Jobs tab) and allow Drive access so uploaded resumes can be read.", 403);
+      }
+      throw new GoogleError(`Drive download failed: ${detail ?? `HTTP ${res.status}`}`, res.status);
+    }
+    if (Number(res.headers.get("content-length") || 0) > maxBytes) throw new GoogleError("The resume is larger than 5 MB.");
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length > maxBytes) throw new GoogleError("The resume is larger than 5 MB.");
+    return { buffer, contentType: res.headers.get("content-type") ?? "" };
   }
 }
 

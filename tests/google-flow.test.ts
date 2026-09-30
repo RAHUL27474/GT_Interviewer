@@ -26,6 +26,12 @@ function fakeGoogle(input: string | URL | Request, init?: RequestInit): Promise<
   }
   if (url.startsWith("https://openidconnect.googleapis.com/")) return json({ email: "careers@example.com" });
   if (url.startsWith("https://forms.googleapis.com/v1/forms/FORM1/responses")) return json({ responses });
+  if (url === "https://forms.googleapis.com/v1/forms/FORM1") {
+    return json({ items: [{ questionItem: { question: { questionId: "q7", fileUploadQuestion: { folderId: "x" } } } }] });
+  }
+  if (url.startsWith("https://www.googleapis.com/drive/v3/files/UPLOADED1?alt=media")) {
+    return Promise.resolve(new Response("Full stack developer, 4 years of React and Node.", { headers: { "Content-Type": "text/plain" } }));
+  }
   // A public resume link (an IP address, so the test needs no DNS).
   if (url === "https://8.8.8.8/cv.txt") {
     return Promise.resolve(new Response("Service advisor, 3 years at a Toyota dealership.", { headers: { "Content-Type": "text/plain" } }));
@@ -103,6 +109,9 @@ const passwordIn = (m: string) => m.match(/Password: ([A-Za-z0-9]{10})/)?.[1];
 const byEmail = async (email: string) => (await store.listCandidatesByEmail(email))[0];
 
 function application(id: string, email: string, name: string, years: string, resume: string, minutesAgo: number) {
+  const upload = resume.startsWith("upload:")
+    ? { q7: { fileUploadAnswers: { answers: [{ fileId: resume.slice(7), fileName: "Kiran_CV.txt", mimeType: "text/plain" }] } } }
+    : {};
   return {
     responseId: id,
     lastSubmittedTime: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
@@ -112,8 +121,9 @@ function application(id: string, email: string, name: string, years: string, res
       q2: answer("+91 98765 43210"),
       q3: answer("6"),
       q4: answer("Immediate"),
-      q5: answer(resume),
+      q5: answer(resume.startsWith("upload:") ? "" : resume),
       q6: answer(years),
+      ...upload,
     },
   };
 }
@@ -127,6 +137,8 @@ test("applications are screened and each applicant is told straight away that it
     application("R2", "ravi@example.com", "Ravi S", "5", "", 180),
     // Below the job's 2-year minimum: not selected.
     application("R3", "neha@example.com", "Neha P", "1", "https://8.8.8.8/cv.txt", 180),
+    // Resume uploaded in the form itself: downloaded through the Drive API.
+    application("R4", "kiran@example.com", "Kiran M", "4", "upload:UPLOADED1", 180),
   ];
   await intake.syncAllForms();
 
@@ -149,8 +161,15 @@ test("applications are screened and each applicant is told straight away that it
   assert.match(neha.screening!.reasons[0], /needs at least 2/);
   assert.equal(neha.questions.length, 0);
 
-  // Email 1 of 3: "application received", to all three, straight away.
-  for (const who of ["asha", "ravi", "neha"]) {
+  const kiran = await byEmail("kiran@example.com");
+  assert.equal(kiran.screening!.decision, "selected");
+  assert.equal(kiran.resume?.fileName, "Kiran_CV.txt");
+  assert.equal(kiran.resumeProblem, undefined);
+  const jobNow = (await store.listJobs()).find((j) => j.id === job.id)!;
+  assert.equal(jobNow.googleForm!.uploadQuestionId, "q7", "upload question found automatically");
+
+  // Email 1 of 3: "application received", to everyone, straight away.
+  for (const who of ["asha", "ravi", "neha", "kiran"]) {
     const mails = mailTo(`${who}@example.com`);
     assert.equal(mails.length, 1, who);
     assert.match(subjectOf(mails[0]), /^Application received: Service Advisor/);
@@ -162,7 +181,7 @@ test("applications are screened and each applicant is told straight away that it
   await store.saveJob({ ...saved, googleForm: { ...saved.googleForm!, syncedUntil: "2026-01-01T00:00:00Z" } });
   await intake.syncAllForms();
   assert.equal((await store.listCandidatesByEmail("asha@example.com")).length, 1);
-  assert.equal(sentMail.length, 3);
+  assert.equal(sentMail.length, 4);
 });
 
 test("after the delay: shortlisted get their login, rejected get the rejection, review gets nothing", async () => {
@@ -183,9 +202,11 @@ test("after the delay: shortlisted get their login, rejected get the rejection, 
 
   assert.equal(mailTo("ravi@example.com").length, 1);
 
-  // Nothing is sent twice.
+  assert.match(subjectOf(mailTo("kiran@example.com")[1]), /^You're shortlisted/);
+
+  // Nothing is sent twice: 4 received + 2 logins + 1 rejection.
   await access.sendDueInvites();
-  assert.equal(sentMail.length, 5);
+  assert.equal(sentMail.length, 7);
 
   const asha = await byEmail("asha@example.com");
   assert.equal(Date.parse(asha.access!.expiresAt!) - Date.parse(asha.access!.invitedAt!), 24 * 3_600_000);

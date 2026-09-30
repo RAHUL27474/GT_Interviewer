@@ -13,14 +13,24 @@ export interface FetchedResume {
 
 export class ResumeLinkError extends Error {}
 
+/** The file id in a Google Drive sharing link, or null for any other link. */
+export function driveFileId(link: string): string | null {
+  try {
+    const url = new URL(link.trim());
+    if (url.hostname !== "drive.google.com") return null;
+    return url.pathname.match(/\/file\/d\/([\w-]+)/)?.[1] ?? url.searchParams.get("id");
+  } catch {
+    return null;
+  }
+}
+
 /** Turns Google Drive / Docs sharing links into direct download links; other links are used as they are. */
 export function downloadUrl(link: string): string {
   const url = new URL(link.trim());
   const host = url.hostname;
-  if (host === "drive.google.com") {
-    const id = url.pathname.match(/\/file\/d\/([\w-]+)/)?.[1] ?? url.searchParams.get("id");
-    if (id) return `https://drive.google.com/uc?export=download&id=${id}`;
-  }
+  const id = driveFileId(link);
+  if (id) return `https://drive.google.com/uc?export=download&id=${id}`;
+  if (host === "drive.google.com") return url.toString();
   if (host === "docs.google.com") {
     const doc = url.pathname.match(/\/document\/d\/([\w-]+)/)?.[1];
     if (doc) return `https://docs.google.com/document/d/${doc}/export?format=pdf`;
@@ -52,7 +62,7 @@ async function assertPublicHost(url: URL) {
   if (!addresses.length || addresses.some(isPrivateAddress)) throw new ResumeLinkError("The resume link points to a private address.");
 }
 
-function detectType(buf: Buffer, contentType: string): FetchedResume["ext"] | null {
+export function detectType(buf: Buffer, contentType: string): FetchedResume["ext"] | null {
   if (buf.subarray(0, 5).toString("latin1") === "%PDF-") return ".pdf";
   // DOCX files are zip archives.
   if (buf[0] === 0x50 && buf[1] === 0x4b) return ".docx";

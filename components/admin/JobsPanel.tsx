@@ -86,6 +86,12 @@ function GoogleCard({ google }: { google: GoogleStatus }) {
               <p className="text-slate-500">
                 Job forms are created in this account and checked for new applications every minute. {emailLine}
               </p>
+              {!connection.canReadDrive && (
+                <p className="mt-1 font-medium text-amber-700">
+                  ⚠ Click <strong>Switch account</strong> and connect the same account again, allowing Google Drive access,
+                  so the app can read the resumes applicants upload.
+                </p>
+              )}
             </>
           ) : (
             <>
@@ -233,6 +239,19 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
       {error && (
         <div className="mt-3">
           <Alert>{error}</Alert>
+        </div>
+      )}
+      {form && !form.uploadQuestionId && (
+        <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+          <p className="font-semibold">Add the resume upload question (one-time, about 30 seconds)</p>
+          <p className="mt-1">
+            Google only allows this in the form editor. Click <strong>Edit in Google Forms</strong>, then{" "}
+            <strong>+ (Add question)</strong>, change the type to <strong>File upload</strong> and click Continue. Title
+            it <strong>Upload your resume</strong>, turn on <strong>Allow only specific file types</strong> (tick PDF
+            and Document), set <strong>Maximum file size</strong> to 10 MB, and switch on <strong>Required</strong>. If
+            the form has an old &quot;Link to your resume&quot; question, delete it. The app finds the new question by
+            itself within a minute. Note: Google asks applicants to sign in with a Google account to upload a file.
+          </p>
         </div>
       )}
       {form && (

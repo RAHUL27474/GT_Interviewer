@@ -6,10 +6,10 @@ import { newAccess, sendApplicationReceived } from "./access";
 import { generateQuestions, resumeToPart, screenResume } from "./ai";
 import { config } from "./config";
 import { files, resumeKey } from "./files";
-import { googleConnection } from "./google";
-import { type FormResponse, listResponses } from "./google-forms";
+import { driveDownload, googleConnection, GoogleError } from "./google";
+import { findUploadQuestion, type FormResponse, listResponses, type UploadedFile, uploadedFile } from "./google-forms";
 import { logger, who } from "./log";
-import { fetchResume, ResumeLinkError } from "./resume-link";
+import { detectType, driveFileId, type FetchedResume, fetchResume, ResumeLinkError } from "./resume-link";
 import { decide, screeningRules } from "./screening";
 import { JOINING_OPTIONS } from "./scoring";
 import { store } from "./store";
@@ -65,6 +65,31 @@ export function parseResponse(form: GoogleJobForm, jobId: string, r: FormRespons
   return { ok: true, profile, resumeUrl: get("resumeUrl") };
 }
 
+/** Downloads a resume stored in Google Drive (uploaded through the form, or a Drive link) via the Drive API. */
+async function fromDrive(fileId: string, fileName?: string): Promise<FetchedResume> {
+  const { buffer, contentType } = await driveDownload(fileId, config.maxResumeBytes);
+  const ext = detectType(buffer, contentType);
+  if (!ext) throw new ResumeLinkError("The resume isn't a PDF or Word (.docx) file.");
+  return { buffer, ext, fileName: fileName || `resume${ext}` };
+}
+
+/**
+ * The applicant's resume: the file uploaded in the form, or (older forms) the pasted link. Drive links go through
+ * the Drive API when allowed, which also works on networks that block Drive's download server.
+ */
+async function getResume(upload: UploadedFile | null, resumeUrl: string): Promise<FetchedResume> {
+  if (upload) return fromDrive(upload.fileId, upload.fileName);
+  const driveId = driveFileId(resumeUrl);
+  if (driveId && (await googleConnection())?.canReadDrive) {
+    try {
+      return await fromDrive(driveId);
+    } catch (err) {
+      log.warn(`Drive API couldn't read the resume link, trying a direct download:`, err);
+    }
+  }
+  return fetchResume(resumeUrl);
+}
+
 /** Creates the candidate for one response. Returns false to stop and retry this response next time (AI down). */
 async function intakeResponse(job: Job, form: GoogleJobForm, r: FormResponse, skip: (name: string, reason: string) => void) {
   const id = responseCandidateId(form.formId, r.responseId);
@@ -84,18 +109,22 @@ async function intakeResponse(job: Job, form: GoogleJobForm, r: FormResponse, sk
   let resume: Candidate["resume"] = null;
   let resumeProblem: string | undefined;
   let resumePart = null;
-  if (!resumeUrl) {
-    resumeProblem = "No resume link was given.";
+  const upload = uploadedFile(r, form.uploadQuestionId);
+  if (!upload && !resumeUrl) {
+    resumeProblem = "No resume was uploaded.";
   } else {
     try {
-      const fetched = await fetchResume(resumeUrl);
+      const fetched = await getResume(upload, resumeUrl);
       resumePart = await resumeToPart(fetched.buffer, fetched.ext);
       resume = { fileName: fetched.fileName, storedAs: id + fetched.ext };
       await files.put(resumeKey(resume.storedAs), fetched.buffer);
     } catch (err) {
       resume = null;
       resumePart = null;
-      resumeProblem = err instanceof ResumeLinkError ? err.message : `The resume couldn't be read (${err instanceof Error ? err.message : err}).`;
+      resumeProblem =
+        err instanceof ResumeLinkError || err instanceof GoogleError
+          ? err.message
+          : `The resume couldn't be read (${err instanceof Error ? err.message : err}).`;
     }
   }
   if (resumeProblem) log.warn(`${profile.fullName} (${job.title}): ${resumeProblem}`);
@@ -156,8 +185,8 @@ async function saveForm(jobId: string, patch: Partial<GoogleJobForm>, skipped: G
 
 /** Reads one job's new responses. */
 export async function syncJob(job: Job) {
-  const form = job.googleForm;
-  if (!form) return;
+  if (!job.googleForm) return;
+  const form = { ...job.googleForm };
   const skipped: NonNullable<GoogleJobForm["skipped"]> = [];
   const skip = (name: string, reason: string) => {
     skipped.unshift({ at: new Date().toISOString(), name, reason });
@@ -165,16 +194,32 @@ export async function syncJob(job: Job) {
   };
   let syncedUntil = form.syncedUntil;
   try {
+    // The resume upload question is added by hand in Google Forms; look for it until it's there.
+    if (!form.uploadQuestionId) {
+      const found = await findUploadQuestion(form.formId);
+      if (found) {
+        form.uploadQuestionId = found;
+        log.info(`"${job.title}": resume upload question found`);
+      }
+    }
     const responses = await listResponses(form.formId, form.syncedUntil);
     for (const r of responses) {
       if (!(await intakeResponse(job, form, r, skip))) break;
       syncedUntil = r.lastSubmittedTime;
     }
-    await saveForm(job.id, { syncedUntil, lastCheckedAt: new Date().toISOString(), lastError: undefined }, skipped);
+    await saveForm(
+      job.id,
+      { syncedUntil, uploadQuestionId: form.uploadQuestionId, lastCheckedAt: new Date().toISOString(), lastError: undefined },
+      skipped,
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     log.error(`"${job.title}" form check failed:`, err);
-    await saveForm(job.id, { syncedUntil, lastCheckedAt: new Date().toISOString(), lastError: message }, skipped);
+    await saveForm(
+      job.id,
+      { syncedUntil, uploadQuestionId: form.uploadQuestionId, lastCheckedAt: new Date().toISOString(), lastError: message },
+      skipped,
+    );
   }
 }
 

@@ -7,3 +7,6 @@ data/
 .env.local
 public/mediapipe/
 public/faceapi/
+
+.vercel
+.env*

@@ -1,4 +1,5 @@
 import { TrackLookup } from "@/components/careers/TrackLookup";
+import { SiteFooter } from "@/components/careers/SiteFooter";
 import { PUBLIC_NAV, TopBar } from "@/components/ui";
 import { config } from "@/lib/config";
 
@@ -11,6 +12,7 @@ export default function TrackPage() {
       <main className="mx-auto max-w-6xl px-4 pt-16 pb-20">
         <TrackLookup />
       </main>
+      <SiteFooter hrContact={config.hrContact} />
     </>
   );
 }

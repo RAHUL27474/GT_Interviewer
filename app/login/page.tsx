@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { SiteFooter } from "@/components/careers/SiteFooter";
 import { CandidateLogin } from "@/components/CandidateLogin";
 import { runJobsIfDue } from "@/lib/jobs-runner";
 import { IconVideo } from "@/components/icons";
@@ -65,6 +66,7 @@ export default async function CandidateLoginPage({ searchParams }: { searchParam
 
         <CandidateLogin notice={notice ? NOTICES[notice] : undefined} />
       </main>
+      <SiteFooter hrContact={config.hrContact} />
     </>
   );
 }

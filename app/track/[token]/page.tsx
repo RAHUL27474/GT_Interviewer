@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { SiteFooter } from "@/components/careers/SiteFooter";
 import { IconCheck, IconClock, IconX } from "@/components/icons";
 import { buttonClass, Card, cn, PUBLIC_NAV, TopBar } from "@/components/ui";
 import { findByTrackToken } from "@/lib/applications";
@@ -112,6 +113,7 @@ export default async function TrackerPage({ params }: { params: Promise<{ token:
           Questions? Contact {config.hrContact}. Bookmark this page to check back any time.
         </p>
       </main>
+      <SiteFooter hrContact={config.hrContact} />
     </>
   );
 }

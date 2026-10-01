@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { SiteFooter } from "@/components/careers/SiteFooter";
 import { ApplyForm } from "@/components/careers/ApplyForm";
 import { IconMapPin } from "@/components/icons";
 import { Card, PUBLIC_NAV, TopBar } from "@/components/ui";
@@ -99,6 +100,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </aside>
         </div>
       </main>
+      <SiteFooter hrContact={config.hrContact} />
     </>
   );
 }

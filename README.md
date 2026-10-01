@@ -2,7 +2,7 @@
 
 Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Claude API (Gemini and Hugging Face for testing)
 
-HR creates a job in the dashboard, and the app makes a **Google Form** for it. HR shares the form link. When someone applies, the app picks up the response within a minute and emails them that it arrived. The AI then **screens the resume** against the job description. **2 hours later** the applicant gets the decision: if shortlisted, an email with a login and a random password, and **24 hours** to start the **video interview**; if not, a polite rejection. In the video interview an AI interviewer reads each question aloud and the candidate answers on camera. The AI then grades the transcribed answers. HR sees ranked results and can watch every answer on the dashboard.
+Applicants find open roles on the **careers site**, read the full description and apply with a short form and their resume. They get an **Application ID** and a private **tracking page** that shows where their application stands. The AI **screens the resume**, and **2 hours later** the applicant gets the decision: if shortlisted, an email with a login and a random password and **24 hours** to start the **video interview**; if not, a polite rejection. In the video interview an AI interviewer reads each question aloud and the candidate answers on camera. The AI then grades the transcribed answers. HR sees ranked results and can watch every answer on the dashboard.
 
 ## Setup
 
@@ -21,39 +21,36 @@ Every setting is explained in `.env.example`. The AI is Claude when `ANTHROPIC_A
 
 | Page | URL |
 |---|---|
-| 1. Application | The job's Google Form (link in the dashboard's Jobs tab) |
-| 2. Candidate login | `/` (email + the password from the interview email) |
-| 3. Video interview | `/interview/<id>` (candidates land here after logging in) |
+| Careers site (open roles) | `/` |
+| Job page + application form | `/jobs/<job-id>` ("Copy job link" in the dashboard) |
+| Track an application | `/track` (email + Application ID), or the private link `/track/<token>` from the confirmation email |
+| Interview login | `/login` (email + the password from the shortlisting email) |
+| Video interview | `/interview/<id>` (candidates land here after logging in) |
 | Staff dashboard (HR and Manager) | `/admin` |
 
-## Google Forms setup
+## Email setup (Google)
 
-Done once, by whoever manages the company Google account. Until it's done, the app runs but no applications come in.
+Interview emails are sent from a Google account's Gmail (or set SMTP instead, see Email). Done once:
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com), sign in with the Google account that should own the job forms, and create a project (e.g. "AI Interviewer").
-2. **APIs & Services → Library**: enable **Google Forms API**, **Gmail API** and **Google Drive API**.
-3. **Google Auth Platform → Branding** (the OAuth consent screen): app name, support email. **Audience**: choose **Internal** for a Google Workspace account, or **External** for a personal Gmail.
-   - External (personal Gmail): add the account under **Test users**, then click **Publish app**. If the app stays in "Testing", Google expires the connection every 7 days. When connecting, Google warns that the app is unverified: click **Advanced → Go to (app name)**. That's expected for an app only you use.
-4. **Clients → Create client → Web application**. Under **Authorized redirect URIs** add `http://localhost:3000/api/admin/google/callback` for local testing, and `https://<your domain>/api/admin/google/callback` for the live site.
-5. Put the **Client ID** and **Client secret** into `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Also set `APP_URL` and a fixed `SESSION_SECRET` (the saved connection is encrypted with it). Restart the app.
-6. Sign in to `/admin` as a Manager or Super Admin → **Jobs** → **Connect Google**, and tick every permission on Google's screen.
-
-**Switching accounts later** (for example from a personal Gmail to the company account): forms stay owned by the account that created them, and the app reads them as whichever account is connected. So before switching, open each open job's form in the old account (**Edit in Google Forms → ⋮ → Add collaborators**) and add the new account as an editor. Then click **Switch account** in the Jobs tab and connect the new one. New jobs' forms are created in the new account. A form the new account can't open shows "Problem reading responses" on its job.
+1. At [console.cloud.google.com](https://console.cloud.google.com) create a project and enable the **Gmail API**.
+2. **Google Auth Platform**: app name and support email; audience **Internal** (Workspace) or **External** (personal Gmail: add the account as a test user, then **Publish app**, otherwise Google expires the connection every 7 days).
+3. **Clients → Create client → Web application**, with the redirect URIs `http://localhost:3000/api/admin/google/callback` and `https://<your domain>/api/admin/google/callback`.
+4. Put the Client ID and secret in `.env` as `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, plus `APP_URL` and a fixed `SESSION_SECRET` (the saved connection is encrypted with it).
+5. In `/admin` → **Jobs** → **Connect Google** (Manager or Super Admin) and allow sending email.
 
 ## Applications and interview logins
 
-- **Creating a job** with "Create a Google Form" ticked makes a form with the job description and these questions: name, phone, experience, city, current and expected CTC, joining time, **resume link** (a Google Drive link shared as "Anyone with the link") and LinkedIn. If the resume link question is deleted, the app adds it back automatically. Google collects and checks the email address itself. Edit the job and the form's title and description follow; close or delete the job and the form stops taking responses. You can restyle the form in Google Forms, but don't delete or re-type its questions, or the app can't match the answers.
-- **Every minute** the app reads new responses of open jobs (`FORM_POLL_SECONDS`). Each becomes a candidate. The resume is downloaded from the pasted link. Google Drive links go through the Drive API (which also works on networks that block Drive's download server); other `https://` links to a PDF or Word file are downloaded directly. If the resume can't be read, the questions come from the job description only, and the dashboard says why. Responses that can't be used (no valid email, or the same email already applied for that job) are listed under the job.
-- **Straight away**, the applicant gets an **"Application received"** email saying they'll hear back within about 2 hours.
-- **Resume screening:** the AI rates the resume 0–100 against the job description (job-related skills and experience only; personal characteristics are ignored), with a short summary, strengths and gaps for HR. Each job has a **pass mark** (default `RESUME_PASS_MARK`, 60) and an optional **minimum experience**:
-  - rated at or above the pass mark → **Shortlisted** (interview questions are written now)
-  - below the pass mark, or less experience than the minimum → **Not selected**
-  - resume couldn't be read → **Needs review**: nothing more is sent until HR clicks **Shortlist & invite** or **Reject**, so a private Drive link doesn't cost a good applicant the interview
-- **`DECISION_DELAY_MINUTES` (120) after applying**, the decision email goes out: the shortlisted get the login page, their email and a random 10-character password; the rest get a polite rejection that doesn't mention the screening reasons. Emails are sent from the connected account's Gmail, or through SMTP if that's set.
-- **HR can override** any decision from the candidate panel at any time before the interview starts: **Shortlist & invite** (sends the login now) or **Reject** (sends the rejection now, and any login already sent stops working).
-- **They must start within `INTERVIEW_ACCESS_HOURS` (24)** of that email. The login page and interview page show the deadline; afterwards the password stops working and the dashboard shows **Expired**. Once started, the interview runs to the end normally.
-- **In the candidate panel** HR sees where the invite stands (scheduled, sent, failed, expired) and can click **Send new login details**, which makes a new password (the old one stops working) and a fresh 24-hour window. If the email can't be sent, the password is shown to HR once, to pass on by phone or WhatsApp.
-- Passwords are stored hashed, the same way as staff passwords, and repeated wrong attempts lock that email for 10 minutes.
+- **Jobs**: every open job is listed on the careers site with its location, type and experience (taken from the description's "Job type" / "Experience" / "Duration" sections) and a short summary. Close a job and it disappears from the site. **Copy job link** in the Jobs tab gives a direct link to share.
+- **Applying**: name, email, phone, experience, city, current and expected CTC, joining time, optional LinkedIn, and a **resume upload** (PDF or Word, up to 5 MB, checked by its contents). One application per email per job. A hidden field and a per-connection limit keep out bots.
+- **Straight away** the applicant sees their **Application ID** and gets an **"Application received"** email with it and their private tracking link.
+- **Resume screening** runs in the background right after applying (retried every minute if it was cut short or the AI was down): the AI rates the resume 0–100 against the job description, with a summary, strengths and gaps for HR. Each job has a **pass mark** (default `RESUME_PASS_MARK`, 60) and an optional **minimum experience**:
+  - at or above the pass mark → **Shortlisted** (interview questions are written now)
+  - below it, or less experience than the minimum → **Not selected**
+  - resume unreadable → **Needs review**: nothing more is sent until HR clicks **Shortlist & invite** or **Reject**
+- **`DECISION_DELAY_MINUTES` (120) after applying** the decision email goes out: the shortlisted get the login page, their email and a random 10-character password; the rest get a polite rejection without the screening reasons.
+- **They must start within `INTERVIEW_ACCESS_HOURS` (24)** of that email; afterwards the password stops working and the dashboard shows **Expired**. Once started, the interview runs to the end normally.
+- **The tracking page** shows a timeline (received → resume review → shortlisted / not selected → interview → hiring team review). It only shows what the applicant has already been told by email (a decision appears once its email has gone out) and never shows scores or AI notes. Applicants can also find it at `/track` with their email and Application ID.
+- **HR can override** any decision from the candidate panel before the interview starts, and **Send new login details** issues a new password and a fresh window (shown to HR once if the email can't be sent).
 
 ## Roles
 
@@ -62,7 +59,7 @@ Done once, by whoever manages the company Google account. Until it's done, the a
 | Sign in | Email + the password emailed after applying, for the interview only | Email + password | Email + password | Email + password |
 | View candidates, scores, videos and proctoring; download resumes; export CSV | | ✅ | ✅ | ✅ |
 | Allow re-interview, re-run AI evaluation | | ✅ | ✅ | ✅ |
-| Create, edit and delete jobs (and their Google Forms) and salary budgets | | ✅ | ✅ | ✅ |
+| Create, edit and delete jobs (shown on the careers site) and salary budgets | | ✅ | ✅ | ✅ |
 | Delete candidates | | | ✅ | ✅ |
 | Connect or switch the Google account | | | ✅ | ✅ |
 | Team: create and manage **HR** accounts | | | ✅ | ✅ |
@@ -87,10 +84,10 @@ lib/
   store.ts                  Records: PostgreSQL (lib/db/postgres.ts) or JSON files (lib/db/json.ts)
   files.ts                  Files: S3-compatible bucket or the local data/ folder
   email.ts                  Login-details and HR emails (Gmail or SMTP)
-  google.ts                 Google account connection (OAuth) and API calls
-  google-forms.ts           Creating job forms and reading their responses
-  intake.ts                 Form responses -> candidates (runs every minute)
-  resume-link.ts            Safe download of resumes from pasted links
+  google.ts                 Google account connection (OAuth) for sending Gmail
+  applications.ts           Careers-site applications: validation, saving, AI screening, lookup
+  tracker.ts                What an applicant sees on their tracking page
+  job-text.ts               Job descriptions for the careers site (headings, bullets, facts)
   access.ts                 Candidate passwords, invite emails, the 24-hour window
   auth.ts                   Staff accounts and cookie sessions
 config/jobs.seed.json       Starting jobs (copied in on first run)
@@ -99,7 +96,7 @@ tests/                      Automated tests (npm test)
 
 ## Flow
 
-1. **Application** (Google Form, see above): the AI reads the resume and job description and writes `QUESTION_COUNT` questions: about 70% from the job description, 30% probing resume claims that matter for the role (all from the job description if the resume couldn't be read). The login email follows 30 minutes later.
+1. **Application** (careers site, see above): the AI reads the resume and job description and writes `QUESTION_COUNT` questions: about 70% from the job description, 30% probing resume claims that matter for the role (all from the job description if the resume couldn't be read). The decision email follows 2 hours after applying.
 2. **Video interview** (laptop or desktop; see [Browsers](#browsers)), after logging in:
    - The candidate turns on the camera and microphone and checks the mic level meter.
    - For each question, the AI interviewer reads it aloud (browser text-to-speech). The candidate gets `PREP_SECONDS` of thinking time, then recording starts automatically.
@@ -154,7 +151,7 @@ Emails go out from the connected Google account's Gmail. To send from another ma
 
 | When | Who gets it |
 |---|---|
-| As soon as the application is read | The applicant: "Application received", you'll hear back within about 2 hours |
+| As soon as they apply | The applicant: "Application received", with their Application ID and tracking link |
 | `DECISION_DELAY_MINUTES` (2 h) after applying, if shortlisted | The applicant: "You're shortlisted", with the login page, email, password, the deadline to start, and what they need |
 | `DECISION_DELAY_MINUTES` after applying, if not selected | The applicant: a polite rejection, without the screening reasons |
 | HR clicks **Send new login details** or **Allow re-interview** | The candidate: a new password and a new deadline |

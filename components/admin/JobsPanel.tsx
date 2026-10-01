@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { IconCheck, IconCopy, IconExternal, IconLink, IconPencil, IconPlus, IconTrash } from "../icons";
+import { IconCheck, IconCopy, IconExternal, IconMail, IconPencil, IconPlus, IconTrash } from "../icons";
 import type { GoogleStatus, Job } from "@/lib/types";
 import { Alert, Button, buttonClass, Card, CardTitle, Field, inputClass, Pill } from "../ui";
 
@@ -16,7 +16,7 @@ export function JobsPanel({ jobs, google, defaultPassMark }: { jobs: Job[]; goog
 
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-sm text-fg-3">
-          Each job gets a Google Form to share with applicants. The salary budget (LPA) is used for scoring only and is
+          Open jobs are listed on the careers page, where applicants apply and track their applications. The salary budget (LPA) is used for scoring only and is
           never shown to them.
         </p>
         <Button onClick={() => setEditing("new")} className="ml-auto">
@@ -29,7 +29,6 @@ export function JobsPanel({ jobs, google, defaultPassMark }: { jobs: Job[]; goog
         <JobForm
           key="new"
           job={null}
-          canCreateForm={Boolean(google.connection)}
           defaultPassMark={defaultPassMark}
           onDone={(warning) => {
             setEditing(null);
@@ -44,7 +43,6 @@ export function JobsPanel({ jobs, google, defaultPassMark }: { jobs: Job[]; goog
           <JobForm
             key={j.id}
             job={j}
-            canCreateForm={Boolean(google.connection)}
             defaultPassMark={defaultPassMark}
             onDone={(warning) => {
               setEditing(null);
@@ -55,7 +53,6 @@ export function JobsPanel({ jobs, google, defaultPassMark }: { jobs: Job[]; goog
           <JobCard
             key={j.id}
             job={j}
-            googleConnected={Boolean(google.connection)}
             defaultPassMark={defaultPassMark}
             onEdit={() => setEditing(j)}
           />
@@ -70,7 +67,7 @@ function GoogleCard({ google }: { google: GoogleStatus }) {
   const { connection } = google;
 
   async function disconnect() {
-    if (!confirm("Disconnect this Google account? Job forms stay in it, but new applications won't be read until you connect again.")) return;
+    if (!confirm("Disconnect this Google account? Interview emails won't be sent from it until you connect again.")) return;
     await fetch("/api/admin/google", { method: "DELETE" });
     router.replace("/admin?tab=jobs");
     router.refresh();
@@ -92,23 +89,17 @@ function GoogleCard({ google }: { google: GoogleStatus }) {
       )}
       <div className="flex flex-wrap items-center gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand-fg">
-          <IconLink className="size-5" />
+          <IconMail className="size-5" />
         </span>
         <div className="min-w-0 flex-1 text-sm">
           {connection ? (
             <>
               <p>
-                Google account: <strong>{connection.email}</strong> <Pill tone="good">Connected</Pill>
+                Email sending: <strong>{connection.email}</strong> <Pill tone="good">Connected</Pill>
               </p>
               <p className="text-fg-3">
-                Job forms are created in this account and checked for new applications every minute. {emailLine}
+                {emailLine}
               </p>
-              {!connection.canReadDrive && (
-                <p className="mt-1 font-medium text-warn-fg">
-                  ⚠ Click <strong>Switch account</strong> and connect the same account again, allowing Google Drive access,
-                  so the app can download resume links through Google Drive.
-                </p>
-              )}
             </>
           ) : (
             <>
@@ -117,7 +108,7 @@ function GoogleCard({ google }: { google: GoogleStatus }) {
               </p>
               <p className="text-fg-3">
                 {google.configured
-                  ? "Connect the company Google account to create job application forms and read applications."
+                  ? "Connect the company Google account so interview emails are sent from its Gmail."
                   : "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env (see the README), restart, then connect here."}{" "}
                 {google.emailRoute === "smtp" && emailLine}
               </p>
@@ -164,26 +155,23 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 
 function JobCard({
   job,
-  googleConnected,
   defaultPassMark,
   onEdit,
 }: {
   job: Job;
-  googleConnected: boolean;
   defaultPassMark: number;
   onEdit: () => void;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const form = job.googleForm;
+  const jobPath = `/jobs/${encodeURIComponent(job.id)}`;
 
   async function remove() {
     if (
       !confirm(
         `Delete the job "${job.title}"?
 
-Its Google Form will stop accepting applications. Candidates who already applied keep their interviews and scores.
+It disappears from the careers page. Candidates who already applied keep their interviews and scores.
 
 Tip: to stop new applications but keep the job, edit it and untick "Open for applications" instead.`,
       )
@@ -191,15 +179,6 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
       return;
     const res = await fetch(`/api/admin/jobs/${encodeURIComponent(job.id)}`, { method: "DELETE" });
     if (!res.ok) return setError((await res.json().catch(() => ({}))).error || "Could not delete the job.");
-    router.refresh();
-  }
-
-  async function createForm() {
-    setBusy(true);
-    setError("");
-    const res = await fetch(`/api/admin/jobs/${encodeURIComponent(job.id)}/form`, { method: "POST" });
-    setBusy(false);
-    if (!res.ok) return setError((await res.json().catch(() => ({}))).error || "Could not create the form.");
     router.refresh();
   }
 
@@ -219,33 +198,10 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {form ? (
-            <>
-              <CopyButton text={form.responderUri} label="Copy form link" />
-              <a
-                href={form.responderUri}
-                target="_blank"
-                rel="noreferrer"
-                className={buttonClass("ghost")}
-              >
-                <IconExternal /> Open form
-              </a>
-              <a
-                href={`https://docs.google.com/forms/d/${form.formId}/edit`}
-                target="_blank"
-                rel="noreferrer"
-                className={buttonClass("ghost")}
-              >
-                <IconPencil /> Edit form
-              </a>
-            </>
-          ) : (
-            googleConnected && (
-              <Button variant="secondary" onClick={createForm} disabled={busy}>
-                {busy ? "Creating…" : "Create Google Form"}
-              </Button>
-            )
-          )}
+          {job.active && <CopyButton text={`${typeof window === "undefined" ? "" : window.location.origin}${jobPath}`} label="Copy job link" />}
+          <a href={jobPath} target="_blank" rel="noreferrer" className={buttonClass("ghost")}>
+            <IconExternal /> {job.active ? "View on careers page" : "Preview"}
+          </a>
           <Button variant="secondary" onClick={onEdit}>
             <IconPencil /> Edit job
           </Button>
@@ -259,34 +215,6 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
           <Alert>{error}</Alert>
         </div>
       )}
-      {form && (
-        <div className="mt-3 space-y-1 text-xs text-fg-3">
-          <p>
-            Form in {form.owner} ·{" "}
-            {form.lastCheckedAt ? `last checked ${new Date(form.lastCheckedAt).toLocaleTimeString()}` : "not checked yet"}
-            {!job.active && " · closed jobs aren't checked"}
-          </p>
-          {form.lastError && (
-            <p className="text-danger-fg">
-              {/reconnect/i.test(form.lastError)
-                ? "New applications can't be read: reconnect Google with \"Switch account\" at the top of this tab."
-                : `Problem reading responses: ${form.lastError}`}
-            </p>
-          )}
-          {form.skipped?.length ? (
-            <details>
-              <summary className="cursor-pointer">{form.skipped.length} response(s) not added</summary>
-              <ul className="mt-1 list-disc pl-5">
-                {form.skipped.map((s) => (
-                  <li key={s.at + s.name}>
-                    {new Date(s.at).toLocaleString()} · {s.name}: {s.reason}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
-        </div>
-      )}
       <div className="mt-3 max-h-48 overflow-auto rounded-lg bg-surface-2 p-3 text-sm whitespace-pre-wrap text-fg-2">
         {job.description}
       </div>
@@ -296,12 +224,10 @@ Tip: to stop new applications but keep the job, edit it and untick "Open for app
 
 function JobForm({
   job,
-  canCreateForm,
   defaultPassMark,
   onDone,
 }: {
   job: Job | null;
-  canCreateForm: boolean;
   defaultPassMark: number;
   onDone: (warning?: string) => void;
 }) {
@@ -324,7 +250,6 @@ function JobForm({
         salaryMax: f.get("salaryMax"),
         description: f.get("description"),
         active: f.get("active") === "on",
-        createForm: f.get("createForm") === "on",
         passMark: f.get("passMark"),
         minExperience: f.get("minExperience"),
       }),
@@ -372,7 +297,7 @@ function JobForm({
             label="Job description"
             htmlFor="description"
             className="sm:col-span-2"
-            hint="Shown on the application form, and most interview questions are generated from it, so list the skills and responsibilities you want tested."
+            hint="Shown on the careers page, and most interview questions are generated from it, so list the skills and responsibilities you want tested."
           >
             <textarea
               id="description"
@@ -387,21 +312,8 @@ function JobForm({
         </div>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" name="active" defaultChecked={job?.active ?? true} className="size-4 accent-brand-600" />
-          Open for applications {job?.googleForm && "(closing the job also closes its Google Form)"}
+          Open for applications (shown on the careers page)
         </label>
-        {!job && (
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              name="createForm"
-              defaultChecked={canCreateForm}
-              disabled={!canCreateForm}
-              className="size-4 accent-brand-600"
-            />
-            Create a Google Form for applications
-            {!canCreateForm && <span className="text-fg-4">(connect a Google account first)</span>}
-          </label>
-        )}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={() => onDone()}>
             Cancel

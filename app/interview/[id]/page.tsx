@@ -13,7 +13,7 @@ export default async function InterviewPage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const candidate = await store.getCandidate(id);
   if (!candidate) notFound();
-  if (!(await isCandidateSession(candidate))) redirect("/?notice=login");
+  if (!(await isCandidateSession(candidate))) redirect("/login?notice=login");
   const state = interviewState(candidate);
 
   return (

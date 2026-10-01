@@ -28,6 +28,7 @@ const DECISION: Record<NonNullable<Candidate["screening"]>["decision"], { label:
   selected: { label: "Shortlisted", tone: "good" },
   rejected: { label: "Not selected", tone: "bad" },
   review: { label: "Needs review", tone: "warn" },
+  pending: { label: "AI screening…", tone: "warn" },
 };
 
 /** The resume screening result, which emails went out, and HR's override buttons. */
@@ -410,7 +411,7 @@ function Detail({
           variant="ghost"
           onClick={() => {
             // Candidates with a login use the login page; older ones use their private link.
-            navigator.clipboard.writeText(c.access ? `${window.location.origin}/` : `${window.location.origin}/interview/${c.id}`);
+            navigator.clipboard.writeText(c.access ? `${window.location.origin}/login` : `${window.location.origin}/interview/${c.id}`);
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
           }}

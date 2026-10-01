@@ -1,5 +1,4 @@
-// The company Google account the app works through: it owns the job application forms, the app reads their
-// responses, and (when SMTP isn't set up) interview emails are sent from it with Gmail.
+// The company Google account the app sends email through (Gmail), when SMTP isn't set up.
 // A Manager connects it once from the dashboard (OAuth); the refresh token is stored encrypted in the database.
 // Plain REST calls, no Google SDK.
 import crypto from "node:crypto";
@@ -13,15 +12,10 @@ const log = logger("google");
 export const GOOGLE_SCOPES = [
   "openid",
   "email",
-  "https://www.googleapis.com/auth/forms.body",
-  "https://www.googleapis.com/auth/forms.responses.readonly",
+  // Interview emails are sent from this account's Gmail (unless SMTP is set up).
   "https://www.googleapis.com/auth/gmail.send",
-  // Resumes uploaded through the forms are saved in this account's Drive; this downloads them.
-  "https://www.googleapis.com/auth/drive.readonly",
 ];
-const FORMS_SCOPES = GOOGLE_SCOPES.filter((s) => s.includes("/forms."));
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
-const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 
 const SETTING_KEY = "google";
 
@@ -39,8 +33,6 @@ export interface GoogleConnection {
   connectedAt: string;
   connectedBy: string;
   canSendMail: boolean;
-  /** Can download resumes uploaded through the forms (connected with Drive permission). */
-  canReadDrive: boolean;
 }
 
 export const googleConfigured = Boolean(config.google.clientId && config.google.clientSecret);
@@ -82,7 +74,6 @@ export async function googleConnection(): Promise<GoogleConnection | null> {
     connectedAt: c.connectedAt,
     connectedBy: c.connectedBy,
     canSendMail: c.scopes.includes(GMAIL_SCOPE),
-    canReadDrive: c.scopes.includes(DRIVE_SCOPE),
   };
 }
 
@@ -129,9 +120,8 @@ async function tokenRequest(body: Record<string, string>) {
 export async function finishConnect(code: string, origin: string, by: string): Promise<string> {
   const tokens = await tokenRequest({ grant_type: "authorization_code", code, redirect_uri: redirectUri(origin) });
   const scopes = (tokens.scope ?? "").split(" ");
-  const missing = FORMS_SCOPES.filter((s) => !scopes.includes(s));
-  if (missing.length) {
-    throw new GoogleError("Please allow access to Google Forms (tick every box on Google's permission screen) and try again.");
+  if (!scopes.includes(GMAIL_SCOPE)) {
+    throw new GoogleError("Please allow sending email with Gmail (tick the box on Google's permission screen) and try again.");
   }
   if (!tokens.refresh_token) throw new GoogleError("Google didn't return a long-lived token. Please try connecting again.");
   const info = (await (
@@ -188,35 +178,6 @@ async function accessToken(): Promise<string> {
       throw new GoogleError("Google access was revoked or has expired. A Manager needs to reconnect Google in Jobs.", 401);
     }
     throw err;
-  }
-}
-
-/**
- * Downloads a Drive file's contents (e.g. a resume uploaded through a form) as the connected account.
- * Throws GoogleError; stops reading past `maxBytes`.
- */
-export async function driveDownload(fileId: string, maxBytes: number): Promise<{ buffer: Buffer; contentType: string }> {
-  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`;
-  for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${await accessToken()}` },
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (res.status === 401 && attempt === 0) {
-      cached = null;
-      continue;
-    }
-    if (!res.ok) {
-      const detail = ((await res.json().catch(() => ({}))) as { error?: { message?: string } }).error?.message;
-      if (res.status === 403 && /scope/i.test(detail ?? "")) {
-        throw new GoogleError("Reconnect Google (Jobs tab) and allow Drive access so uploaded resumes can be read.", 403);
-      }
-      throw new GoogleError(`Drive download failed: ${detail ?? `HTTP ${res.status}`}`, res.status);
-    }
-    if (Number(res.headers.get("content-length") || 0) > maxBytes) throw new GoogleError("The resume is larger than 5 MB.");
-    const buffer = Buffer.from(await res.arrayBuffer());
-    if (buffer.length > maxBytes) throw new GoogleError("The resume is larger than 5 MB.");
-    return { buffer, contentType: res.headers.get("content-type") ?? "" };
   }
 }
 

@@ -23,18 +23,18 @@ export async function register() {
     setInterval(() => {
       sweepStaleInterviews().catch((err) => console.error("Interview sweep failed:", err));
     }, 20_000);
-    // New applications from the job Google Forms, and the interview login emails that have come due.
-    const { formPollMs, syncAllForms } = await import("./lib/intake");
+    // Applications waiting for AI screening, and the decision emails that have come due.
+    const { screenPendingApplications } = await import("./lib/applications");
     const { sendDueInvites } = await import("./lib/access");
     const { googleConnection, googleConfigured } = await import("./lib/google");
     const google = await googleConnection().catch(() => null);
     logger("startup").info(
-      `Google: ${google ? `connected as ${google.email}` : googleConfigured ? "not connected (connect it in Jobs)" : "GOOGLE_CLIENT_ID not set"}; ` +
+      `Google: ${google ? `connected as ${google.email}` : googleConfigured ? "not connected (connect it in Jobs to send email)" : "GOOGLE_CLIENT_ID not set"}; ` +
         `decision emails ${config.decisionDelayMinutes} min after applying, ${config.interviewAccessHours} h to start`,
     );
     setInterval(() => {
-      syncAllForms().catch((err) => console.error("Form check failed:", err));
-    }, formPollMs());
+      screenPendingApplications().catch((err) => console.error("Screening failed:", err));
+    }, 60_000);
     setInterval(() => {
       sendDueInvites().catch((err) => console.error("Sending invites failed:", err));
     }, 30_000);

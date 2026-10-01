@@ -88,8 +88,6 @@ export const config = {
     clientId: process.env.GOOGLE_CLIENT_ID?.trim() || "",
     clientSecret: process.env.GOOGLE_CLIENT_SECRET?.trim() || "",
   },
-  /** How often every open job's Google Form is checked for new responses. */
-  formPollSeconds: Number(process.env.FORM_POLL_SECONDS || 60),
   /** The decision email (shortlisted with the interview login, or not selected) goes out this long after applying. */
   decisionDelayMinutes: Number(process.env.DECISION_DELAY_MINUTES ?? 120),
   /** Resumes rated at or above this (0-100) are shortlisted, unless the job sets its own. */

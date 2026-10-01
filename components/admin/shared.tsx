@@ -13,6 +13,7 @@ export const STATUS: Record<CandidateStatus, { label: string; tone: Tone }> = {
 
 /** For interviews not started yet: where the login email stands (replaces "Not started"). */
 export const INVITE: Record<InviteState, { label: string; tone: Tone }> = {
+  screening: { label: "Screening…", tone: "neutral" },
   review: { label: "Needs review", tone: "warn" },
   scheduled: { label: "Shortlisted, email scheduled", tone: "neutral" },
   sent: { label: "Invited", tone: "neutral" },

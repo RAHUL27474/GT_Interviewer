@@ -189,3 +189,14 @@ export const IconVolume = (p: IconProps) => (
     <path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
   </Icon>
 );
+export const IconUpload = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 16V5M7.5 9.5 12 5l4.5 4.5M4.5 19.5h15" />
+  </Icon>
+);
+export const IconMapPin = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11Z" />
+    <circle cx="12" cy="10" r="2.5" />
+  </Icon>
+);

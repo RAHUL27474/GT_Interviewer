@@ -3,7 +3,7 @@
 import { sendDueInvites } from "./access";
 import { purgeDeactivatedAccounts } from "./auth";
 import { purgeOldMedia, resumePendingEvaluations, sweepStaleInterviews } from "./candidates";
-import { syncAllForms } from "./intake";
+import { screenPendingApplications } from "./applications";
 import { logger } from "./log";
 import { store } from "./store";
 
@@ -45,9 +45,9 @@ export async function runJobsIfDue() {
 export async function runScheduledJobs() {
   return Promise.all([
     step("stale interviews", sweepStaleInterviews),
-    // New applications first, then the decision emails that may already be due.
-    step("forms and emails", async () => {
-      await syncAllForms();
+    // Applications still waiting for AI screening first, then the decision emails that may already be due.
+    step("screening and emails", async () => {
+      await screenPendingApplications();
       await sendDueInvites();
     }),
     // Gradings stuck for 15 minutes (their serverless instance was stopped).

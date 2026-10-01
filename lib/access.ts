@@ -59,7 +59,7 @@ export async function issueLoginDetails(
   const expiresAt = new Date(now.getTime() + config.interviewAccessHours * 3_600_000).toISOString();
 
   let error: string | undefined;
-  const loginUrl = appLink("/", opts.origin);
+  const loginUrl = appLink("/login", opts.origin);
   if (!loginUrl) {
     error = "APP_URL is not set, so the email can't include a login link.";
   } else {
@@ -116,6 +116,7 @@ export async function sendApplicationReceived(c: Candidate) {
       applicationReceivedMail(c, {
         company: config.companyName,
         decisionHours: Math.round((config.decisionDelayMinutes / 60) * 10) / 10,
+        trackUrl: c.trackToken ? appLink(`/track/${c.trackToken}`) : null,
       }),
     );
     log.info(`${who(c)}: application-received email sent`);
@@ -165,8 +166,9 @@ function decisionDue(c: Candidate, now: number) {
   const a = c.access;
   if (!a || Date.parse(a.inviteAt) > now || (a.retryAt && Date.parse(a.retryAt) > now)) return false;
   if (c.status === "rejected") return Boolean(c.screening && !c.screening.rejectionEmailedAt);
-  // Candidates waiting for HR's review get nothing until HR decides.
-  return c.status === "ready" && !a.invitedAt && c.screening?.decision !== "review";
+  // Nothing goes out while the AI is still screening, or while HR has to decide.
+  const d = c.screening?.decision;
+  return c.status === "ready" && !a.invitedAt && d !== "review" && d !== "pending";
 }
 
 let sweeping = false;

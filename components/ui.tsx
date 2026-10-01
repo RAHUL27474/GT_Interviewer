@@ -5,21 +5,77 @@ export function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
-export function TopBar({ company, step, wide }: { company: string; step: string; wide?: boolean }) {
+/** Links shown on the public careers pages. */
+export const PUBLIC_NAV = [
+  { href: "/", label: "Open roles" },
+  { href: "/track", label: "Track application" },
+  { href: "/login", label: "Interview login" },
+];
+
+export function TopBar({
+  company,
+  step,
+  wide,
+  nav,
+  active,
+}: {
+  company: string;
+  step: string;
+  wide?: boolean;
+  /** Navigation links (public pages). */
+  nav?: { href: string; label: string }[];
+  /** href of the current page, highlighted in the nav. */
+  active?: string;
+}) {
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-surface/80 backdrop-blur-md">
-      <div className={cn("mx-auto flex items-center gap-3 px-4 py-3", wide ? "max-w-7xl" : "max-w-5xl")}>
-        <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-sm font-bold text-white shadow-sm">
-          {company.slice(0, 1).toUpperCase()}
-        </span>
-        <div className="min-w-0 leading-tight">
-          <p className="truncate font-semibold">{company}</p>
-          <p className="truncate text-xs text-fg-3">{step}</p>
-        </div>
+      <div className={cn("mx-auto flex items-center gap-3 px-4 py-3", wide ? "max-w-7xl" : "max-w-6xl")}>
+        <a href={nav ? "/" : undefined} className="flex min-w-0 items-center gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-sm font-bold text-white shadow-sm">
+            {company.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="min-w-0 leading-tight">
+            <span className="block truncate font-semibold">{company}</span>
+            <span className="block truncate text-xs text-fg-3">{step}</span>
+          </span>
+        </a>
+        {nav && (
+          <nav className="ml-6 hidden items-center gap-1 md:flex" aria-label="Main">
+            {nav.map((l) => (
+              <a
+                key={l.href}
+                href={l.href}
+                aria-current={active === l.href ? "page" : undefined}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 text-sm font-medium transition",
+                  active === l.href ? "bg-brand-soft text-brand-fg" : "text-fg-3 hover:bg-surface-2 hover:text-fg",
+                )}
+              >
+                {l.label}
+              </a>
+            ))}
+          </nav>
+        )}
         <div className="ml-auto">
           <ThemeToggle />
         </div>
       </div>
+      {nav && (
+        <nav className="flex gap-1 overflow-x-auto border-t border-line px-3 py-1.5 md:hidden" aria-label="Main">
+          {nav.map((l) => (
+            <a
+              key={l.href}
+              href={l.href}
+              className={cn(
+                "shrink-0 rounded-lg px-3 py-1 text-sm font-medium",
+                active === l.href ? "bg-brand-soft text-brand-fg" : "text-fg-3",
+              )}
+            >
+              {l.label}
+            </a>
+          ))}
+        </nav>
+      )}
     </header>
   );
 }

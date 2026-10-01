@@ -140,8 +140,8 @@ export function loginDetailsMail(
 
 /** Sent as soon as the application arrives. */
 export function applicationReceivedMail(
-  c: Pick<Candidate, "fullName" | "email" | "jobTitle">,
-  opts: { company: string; decisionHours: number },
+  c: Pick<Candidate, "fullName" | "email" | "jobTitle" | "applicationRef">,
+  opts: { company: string; decisionHours: number; trackUrl?: string | null },
 ): Mail {
   const within = opts.decisionHours >= 1 ? `${opts.decisionHours} hour${opts.decisionHours === 1 ? "" : "s"}` : "a short while";
   const lines = [
@@ -149,11 +149,23 @@ export function applicationReceivedMail(
     `We're reviewing it now, and you'll hear from us by email within about ${within}. If you're shortlisted, that email will include login details for a short AI video interview.`,
     "There's nothing else you need to do for now.",
   ];
+  const extra = [
+    c.applicationRef ? `Your Application ID: ${c.applicationRef}` : "",
+    opts.trackUrl ? `Track your application any time: ${opts.trackUrl}` : "",
+  ].filter(Boolean);
   return {
     to: c.email,
     subject: `Application received: ${oneLine(c.jobTitle)} - ${oneLine(opts.company)}`,
-    text: [`Hi ${oneLine(c.fullName)},`, "", ...lines.flatMap((l) => [l, ""]), opts.company].join("\n"),
-    html: `<p>Hi ${escapeHtml(c.fullName)},</p>${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("")}<p>${escapeHtml(opts.company)}</p>`,
+    text: [`Hi ${oneLine(c.fullName)},`, "", ...[...lines, ...extra].flatMap((l) => [l, ""]), opts.company].join("\n"),
+    html:
+      `<p>Hi ${escapeHtml(c.fullName)},</p>${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("")}` +
+      (c.applicationRef
+        ? `<p>Your Application ID: <strong style="font-family:monospace;font-size:16px">${escapeHtml(c.applicationRef)}</strong></p>`
+        : "") +
+      (opts.trackUrl
+        ? `<p><a href="${escapeHtml(opts.trackUrl)}" style="display:inline-block;padding:10px 18px;background:#1d4ed8;color:#fff;border-radius:6px;text-decoration:none">Track your application</a></p>`
+        : "") +
+      `<p>${escapeHtml(opts.company)}</p>`,
   };
 }
 

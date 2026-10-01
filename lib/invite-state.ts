@@ -11,6 +11,7 @@ export function accessExpired(c: Pick_, now = Date.now()) {
 /** Where the login invite stands, for interviews not started yet (null otherwise, or for older candidates). */
 export function inviteState(c: Pick_, now = Date.now()): InviteState | null {
   if (c.status !== "ready" || !c.access) return null;
+  if (!c.access.invitedAt && c.screening?.decision === "pending") return "screening";
   if (!c.access.invitedAt && c.screening?.decision === "review") return "review";
   if (!c.access.invitedAt) return c.access.emailError ? "email_failed" : "scheduled";
   return accessExpired(c, now) ? "expired" : "sent";

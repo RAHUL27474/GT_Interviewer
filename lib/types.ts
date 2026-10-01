@@ -33,8 +33,8 @@ export interface Job {
   active: boolean;
   /** Staff email of whoever last created/edited this job. */
   updatedBy?: string;
-  /** The Google Form applicants fill in for this job (created from the dashboard). */
-  googleForm?: GoogleJobForm;
+  /** When the job was first published (shown on the careers page). */
+  createdAt?: string;
   /** Resume screening rules. Missing means the defaults (pass mark 60, no experience minimum). */
   screening?: JobScreening;
 }
@@ -50,8 +50,11 @@ export interface JobScreening {
 export interface Screening {
   /** 0-100 match between resume and job description; null when there was no readable resume. */
   score: number | null;
-  /** selected: interview invite; rejected: rejection email; review: waiting for HR to decide. */
-  decision: "selected" | "rejected" | "review";
+  /**
+   * pending: the AI hasn't screened it yet (just applied, or the AI was unavailable); selected: interview invite;
+   * rejected: rejection email; review: waiting for HR to decide.
+   */
+  decision: "pending" | "selected" | "rejected" | "review";
   /** For HR only, never sent to the applicant. */
   summary: string;
   strengths: string[];
@@ -66,40 +69,6 @@ export interface Screening {
   receivedEmailError?: string;
   /** When the rejection email went out. */
   rejectionEmailedAt?: string;
-}
-
-/** Form fields the app reads from each response, keyed to the form's question ids. */
-export type FormField =
-  | "fullName"
-  | "email"
-  | "phone"
-  | "totalExperience"
-  | "currentLocation"
-  | "linkedin"
-  | "currentCTC"
-  | "expectedCTC"
-  | "joiningCategory"
-  | "resumeUrl";
-
-export interface GoogleJobForm {
-  formId: string;
-  /** The link applicants open. */
-  responderUri: string;
-  /** Google account that owns the form. */
-  owner: string;
-  createdAt: string;
-  /** Question id for each field. Email may instead come from the form's own email collection. */
-  questionIds: Partial<Record<FormField, string>>;
-  emailFromSettings: boolean;
-  /** The "File upload" resume question, added by hand in Google Forms; found automatically. */
-  uploadQuestionId?: string;
-  /** Responses submitted up to this time have been read (RFC 3339, from Google). */
-  syncedUntil?: string;
-  lastCheckedAt?: string;
-  /** Last problem reading responses, shown to HR; cleared on the next successful check. */
-  lastError?: string;
-  /** Responses that couldn't become candidates (e.g. already applied, no valid email). */
-  skipped?: { at: string; name: string; reason: string }[];
 }
 
 /** Candidate login for the interview: emailed after applying, valid for a limited time. */
@@ -125,7 +94,7 @@ export type PublicJob = Pick<Job, "id" | "title" | "location" | "description">;
 export interface GoogleStatus {
   /** GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set. */
   configured: boolean;
-  connection: { email: string; connectedAt: string; connectedBy: string; canSendMail: boolean; canReadDrive: boolean } | null;
+  connection: { email: string; connectedAt: string; connectedBy: string; canSendMail: boolean } | null;
   /** Managers and Super Admins may connect or disconnect. */
   canConnect: boolean;
   /** How emails go out now, or null when they can't. */
@@ -261,6 +230,10 @@ export interface Candidate extends CandidateProfile {
   /** Why the resume link couldn't be read (questions then come from the job description only). */
   resumeProblem?: string;
   source?: "website" | "google_form";
+  /** Short reference the applicant uses to look up their application, e.g. "GT-7K2M9Q". */
+  applicationRef?: string;
+  /** Secret in the applicant's private tracking link. */
+  trackToken?: string;
   /** Google Form response this candidate came from. */
   googleResponseId?: string;
   /** Email + password login for the interview. Missing on older candidates, who use the link alone. */
@@ -319,7 +292,7 @@ export interface CandidateSummary
   screening: Pick<Screening, "score" | "decision"> | null;
 }
 
-export type InviteState = "review" | "scheduled" | "sent" | "email_failed" | "expired";
+export type InviteState = "screening" | "review" | "scheduled" | "sent" | "email_failed" | "expired";
 
 export interface InterviewState {
   fullName: string;

@@ -17,6 +17,7 @@ import type { Candidate, CandidateProfile, FormField, GoogleJobForm, Job } from 
 
 const log = logger("intake");
 const MAX_SKIPPED = 20;
+const INTAKE_BUDGET_MS = 180_000;
 
 /** Candidate id for a form response: the same response always maps to the same id, so it's never added twice. */
 export function responseCandidateId(formId: string, responseId: string) {
@@ -187,7 +188,7 @@ async function saveForm(jobId: string, patch: Partial<GoogleJobForm>, skipped: G
 const verifiedForms = new Set<string>();
 
 /** Reads one job's new responses. */
-export async function syncJob(job: Job) {
+export async function syncJob(job: Job, deadline?: number) {
   if (!job.googleForm) return;
   const form = { ...job.googleForm };
   const skipped: NonNullable<GoogleJobForm["skipped"]> = [];
@@ -204,8 +205,15 @@ export async function syncJob(job: Job) {
     }
     const responses = await listResponses(form.formId, form.syncedUntil);
     for (const r of responses) {
+      // Leave the rest for the next run rather than be cut off mid-applicant by a serverless time limit.
+      if (deadline && Date.now() > deadline) {
+        log.info(`"${job.title}": time budget used, the remaining responses wait for the next run`);
+        break;
+      }
       if (!(await intakeResponse(job, form, r, skip))) break;
       syncedUntil = r.lastSubmittedTime;
+      // Bookmark after every applicant, so a run that is stopped never re-reads finished ones.
+      await saveForm(job.id, { syncedUntil, questionIds: form.questionIds }, skipped.splice(0));
     }
     await saveForm(
       job.id,
@@ -232,7 +240,13 @@ export async function syncAllForms() {
   try {
     if (!(await googleConnection())) return;
     const jobs = (await store.listJobs()).filter((j) => j.active && j.googleForm);
-    for (const job of jobs) await syncJob(job);
+    // New applicants are screened by AI (a few seconds to a minute each). Stop starting new ones after this, so a
+    // run fits well inside a serverless function's time limit; the next run carries on.
+    const deadline = Date.now() + INTAKE_BUDGET_MS;
+    for (const job of jobs) {
+      if (Date.now() > deadline) break;
+      await syncJob(job, deadline);
+    }
   } finally {
     running = false;
   }

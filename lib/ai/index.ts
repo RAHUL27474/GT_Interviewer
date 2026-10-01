@@ -5,7 +5,7 @@ import path from "node:path";
 import { config } from "../config";
 import { files, mediaKey } from "../files";
 import type { Candidate, CandidateProfile, Evaluation, Job, Question } from "../types";
-import { claudeStructured } from "./claude";
+import { claudeKeyCheck, claudeStructured } from "./claude";
 import { geminiStructured, geminiTranscribe } from "./gemini";
 import { hfStructured, hfTranscribe } from "./hf";
 import { logger, since, who } from "../log";
@@ -51,35 +51,46 @@ export const SPEECH_TO_TEXT_LABEL = { gemini: "Gemini", hf: "Whisper", off: "bro
  * When server speech-to-text is on (SPEECH_TO_TEXT), replaces each answer's browser transcript with one made from
  * its video. Returns the new transcripts by answer index; answers that fail keep their browser transcript.
  */
-export async function serverTranscripts(candidate: Candidate): Promise<Map<number, string>> {
-  const result = new Map<number, string>();
+export async function serverTranscripts(
+  candidate: Candidate,
+  /**
+   * Called as each answer finishes, so it can be saved straight away: if the run is cut short (serverless time
+   * limit), finished answers aren't redone. `text` is null when the browser transcript is kept.
+   */
+  onResult: (index: number, text: string | null) => Promise<void>,
+): Promise<void> {
   const stt = config.speechToText;
-  if (stt === "off") return result;
+  if (stt === "off") return;
 
   const wlog = logger("speech-to-text");
-  for (const [i, a] of candidate.answers.entries()) {
-    if (a.transcriptSource && a.transcriptSource !== "browser") continue;
-    if (!a.video) {
-      wlog.info(`${who(candidate)} answer ${i + 1}: no video, keeping browser transcript`);
-      continue;
-    }
+  // Not yet tried (no source). "browser" means a server attempt already failed: keep it rather than loop forever.
+  const pending = [...candidate.answers.entries()].filter(([, a]) => !a.transcriptSource && a.video);
+
+  async function transcribe([i, a]: [number, Candidate["answers"][number]]) {
     const start = Date.now();
     try {
-      const data = await files.get(mediaKey(candidate.id, a.video));
-      const mime = MEDIA_MIME[path.extname(a.video)] ?? MEDIA_MIME[".webm"];
+      const data = await files.get(mediaKey(candidate.id, a.video!));
+      const mime = MEDIA_MIME[path.extname(a.video!)] ?? MEDIA_MIME[".webm"];
       const text = stt === "gemini" ? await geminiTranscribe(data, mime.video) : await hfTranscribe(data, mime.audio);
       const mb = (data.length / 1024 / 1024).toFixed(1);
       if (text) {
-        result.set(i, text.slice(0, config.maxTranscriptChars));
         wlog.info(`${who(candidate)} answer ${i + 1}: ${text.length} chars from ${mb} MB video in ${since(start)}`);
+        await onResult(i, text.slice(0, config.maxTranscriptChars));
       } else {
         wlog.warn(`${who(candidate)} answer ${i + 1}: no speech found in ${mb} MB video, keeping browser transcript`);
+        await onResult(i, null);
       }
     } catch (err) {
       wlog.warn(`${who(candidate)} answer ${i + 1}: failed after ${since(start)}, keeping browser transcript:`, err);
+      await onResult(i, null);
     }
   }
-  return result;
+
+  // A few at a time: much faster than one by one, without flooding the speech-to-text service.
+  const CONCURRENCY = 3;
+  for (let k = 0; k < pending.length; k += CONCURRENCY) {
+    await Promise.all(pending.slice(k, k + CONCURRENCY).map(transcribe));
+  }
 }
 
 export async function resumeToPart(buffer: Buffer, ext: string): Promise<Part> {
@@ -368,4 +379,18 @@ personal characteristic.
     concerns: result.concerns,
     proctoringNotes: result.proctoring_notes,
   };
+}
+
+let keyStatus: { at: number; result: Awaited<ReturnType<typeof claudeKeyCheck>> } | null = null;
+
+/**
+ * Whether the Claude key works (checked at most every 10 minutes; no tokens used). Null when Claude isn't the
+ * active provider.
+ */
+export async function claudeStatus() {
+  if (config.aiProvider !== "claude") return null;
+  if (!keyStatus || Date.now() - keyStatus.at > 10 * 60 * 1000 || !keyStatus.result.ok) {
+    keyStatus = { at: Date.now(), result: await claudeKeyCheck() };
+  }
+  return keyStatus.result;
 }

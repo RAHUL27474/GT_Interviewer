@@ -22,6 +22,7 @@ async function step(name: string, fn: () => Promise<unknown>) {
 }
 
 const LAST_RUN_KEY = "jobsLastRun";
+const CLEANUP_KEY = "cleanupLastRun";
 const MIN_GAP_MS = 60_000;
 
 /**
@@ -51,7 +52,11 @@ export async function runScheduledJobs() {
     }),
     // Gradings stuck for 15 minutes (their serverless instance was stopped).
     step("stuck gradings", () => resumePendingEvaluations(15 * 60 * 1000)),
+    // Hourly is plenty: these work in days, and the account purge rewrites the staff table.
     step("cleanup", async () => {
+      const last = await store.getSetting<string>(CLEANUP_KEY);
+      if (last && Date.now() - Date.parse(last) < 60 * 60 * 1000) return;
+      await store.setSetting(CLEANUP_KEY, new Date().toISOString());
       await purgeDeactivatedAccounts();
       await purgeOldMedia();
     }),

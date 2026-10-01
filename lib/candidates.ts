@@ -114,21 +114,23 @@ export async function runEvaluation(id: string) {
     if (!c) return;
     elog.info(`${who(c)}: grading ${c.answers.length}/${c.questions.length} answers...`);
 
-    const transcripts = await serverTranscripts(c);
-    if (transcripts.size) {
-      const source = config.speechToText === "gemini" ? "gemini" : "whisper";
-      const updated = await store.updateCandidate(id, (cand) => {
-        for (const [i, text] of transcripts) {
-          const a = cand.answers[i];
-          if (!a) continue;
+    const source = config.speechToText === "gemini" ? "gemini" : "whisper";
+    await serverTranscripts(c, async (i, text) => {
+      await store.updateCandidate(id, (cand) => {
+        const a = cand.answers[i];
+        if (!a) return;
+        if (text) {
           a.browserTranscript ??= a.transcript;
           a.transcript = text;
           a.transcriptSource = source;
+        } else {
+          a.transcriptSource = "browser";
         }
       });
-      if (!updated) return;
-      c = updated;
-    }
+    });
+    const updated = await store.getCandidate(id);
+    if (!updated) return;
+    c = updated;
 
     let evaluation: Evaluation;
     if (c.answers.length === 0) {

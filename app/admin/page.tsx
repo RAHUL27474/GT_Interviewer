@@ -5,6 +5,7 @@ import { LoginForm } from "@/components/admin/LoginForm";
 import { Alert, TopBar } from "@/components/ui";
 import { getCurrentUser, toPublic } from "@/lib/auth";
 import { toSummary } from "@/lib/candidates";
+import { claudeStatus } from "@/lib/ai";
 import { AI_PROVIDER_LABEL, config } from "@/lib/config";
 import { emailRoute } from "@/lib/email";
 import { googleConfigured, googleConnection } from "@/lib/google";
@@ -25,6 +26,7 @@ export default async function AdminPage({
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
+  const claude = user ? await claudeStatus() : null;
   // Staff opening the dashboard also brings in new applications and due emails (at most once a minute).
   after(runJobsIfDue);
 
@@ -72,8 +74,14 @@ export default async function AdminPage({
       <main className="mx-auto max-w-7xl space-y-4 px-4 pt-6 pb-16">
         {user && config.aiProvider !== "claude" && (
           <Alert tone="info">
-            AI: <strong>{AI_PROVIDER_LABEL[config.aiProvider]}</strong>. Set ANTHROPIC_API_KEY in .env before launch to
+            AI: <strong>{AI_PROVIDER_LABEL[config.aiProvider]}</strong>. Set ANTHROPIC_API_KEY (locally and in Vercel) to
             use Claude.
+          </Alert>
+        )}
+        {claude && !claude.ok && (
+          <Alert>
+            <strong>Claude isn&apos;t working:</strong> {claude.error} Interview questions, resume screening and grading
+            will fail until this is fixed.
           </Alert>
         )}
         {body}
